@@ -30,6 +30,20 @@ const pick = (row, keys, fallback = '') => {
 };
 const cleanId = (value, fallbackPrefix = 'ID') => String(value || `${fallbackPrefix}${Date.now()}`);
 const looksUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+const stripUuidPrefix = (value, fallback = '') => {
+  const text = String(value ?? '').trim();
+  if (!text) return fallback;
+  return text
+    .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*-\s*/i, '')
+    .trim() || fallback;
+};
+const friendlySaleNumber = (sale) => {
+  const numero = String(sale?.numero || '').trim();
+  if (numero && !looksUuid(numero)) return numero;
+  const id = String(sale?.id || '').trim();
+  if (id && !looksUuid(id)) return id;
+  return '';
+};
 const removeDbMeta = (row) => {
   const { project_id, created_at, updated_at, busca_normalizada, ...rest } = row || {};
   return rest;
@@ -45,10 +59,10 @@ function mergeDefaultUsers(users) {
 }
 
 function usuarioFromDb(row) {
-  const rawNome = pick(row, ['nome', 'name', 'usuario_nome', 'display_name'], 'Usuário');
+  const rawNome = stripUuidPrefix(pick(row, ['nome', 'name', 'usuario_nome', 'display_name'], 'Usuário'), 'Usuário');
   const login = String(pick(row, ['login', 'usuario', 'username', 'email'], '') || '').trim();
   const perfil = String(pick(row, ['perfil', 'tipo', 'role'], 'vendedor')).toLowerCase();
-  const nome = looksUuid(rawNome) ? (login || perfil || 'Usuário') : rawNome;
+  const nome = looksUuid(rawNome) ? (login || perfil || 'Usuário') : stripUuidPrefix(rawNome, login || perfil || 'Usuário');
   return {
     id: cleanId(pick(row, ['id'], `U${Date.now()}`), 'U'),
     nome,
@@ -111,7 +125,7 @@ function clienteFromDb(row) {
   const r = removeDbMeta(row);
   return {
     id: cleanId(r.id, 'C'),
-    nome: pick(r, ['nome', 'cliente', 'razao_social', 'name'], r.id || 'Cliente'),
+    nome: stripUuidPrefix(pick(r, ['nome', 'cliente', 'razao_social', 'name'], 'Cliente'), 'Cliente'),
     documento: pick(r, ['documento', 'cpf_cnpj', 'cpf', 'cnpj'], ''),
     telefone: pick(r, ['telefone', 'celular', 'whatsapp'], ''),
     email: pick(r, ['email'], ''),
@@ -123,7 +137,7 @@ function clienteFromDb(row) {
 
 function fornecedorFromDb(row) {
   const r = removeDbMeta(row);
-  const nome = pick(r, ['nome', 'fornecedor', 'razao_social', 'name'], 'Fornecedor');
+  const nome = stripUuidPrefix(pick(r, ['nome', 'fornecedor', 'razao_social', 'name'], 'Fornecedor'), 'Fornecedor');
   return {
     id: cleanId(r.id, 'F'),
     nome: looksUuid(nome) ? 'Fornecedor' : nome,
@@ -137,7 +151,7 @@ function fornecedorFromDb(row) {
 
 function vendedorFromDb(row) {
   const r = removeDbMeta(row);
-  const nome = pick(r, ['nome', 'vendedor', 'usuario', 'name'], 'Vendedor');
+  const nome = stripUuidPrefix(pick(r, ['nome', 'vendedor', 'usuario', 'name'], 'Vendedor'), 'Vendedor');
   return {
     id: cleanId(r.id, 'V'),
     nome: looksUuid(nome) ? 'Vendedor' : nome,
@@ -150,7 +164,7 @@ function vendedorFromDb(row) {
 
 function produtoFromDb(row) {
   const codigo = String(pick(row, ['codigo', 'code', 'referencia', 'barra', 'cod_barras'], '') || '');
-  const nome = String(pick(row, ['nome', 'produto', 'descricao', 'descricao_produto', 'name'], '') || codigo || 'Produto sem nome');
+  const nome = stripUuidPrefix(String(pick(row, ['nome', 'produto', 'descricao', 'descricao_produto', 'name'], '') || codigo || 'Produto sem nome'), codigo || 'Produto sem nome');
   return {
     id: cleanId(row.id, 'P'),
     codigo,
@@ -203,10 +217,10 @@ function movimentoFromDb(row) {
     data: row.created_at || row.data || new Date().toISOString(),
     tipo: String(row.tipo || 'entrada').toUpperCase().replace('SAIDA', 'SAÍDA'),
     produtoId: row.produto_id || row.produtoId || '',
-    produtoNome: row.descricao || row.produto_nome || row.produtoNome || row.nome || '',
+    produtoNome: stripUuidPrefix(row.descricao || row.produto_nome || row.produtoNome || row.nome || '', ''),
     qtd: toNumber(row.quantidade || row.qtd),
     motivo: row.origem || row.motivo || '',
-    usuario: row.usuario_nome || row.usuario || '',
+    usuario: stripUuidPrefix(row.usuario_nome || row.usuario || '', ''),
     vendaId: row.venda_id || row.vendaId || '',
   };
 }
@@ -228,14 +242,16 @@ function movimentoToDb(m) {
 }
 
 function vendaFromDb(row, itens = []) {
+  const numero = String(pick(row, ['numero', 'codigo_venda', 'n_venda'], '') || '').trim();
   return {
-    id: cleanId(row.id, 'VD'),
+    id: cleanId(row.id, 'VD'), // id tecnico interno; nunca exibir ao usuario
+    numero: numero && !looksUuid(numero) ? numero : '',
     data: row.data_venda || row.data || row.created_at || new Date().toISOString(),
     clienteId: row.cliente_id || row.clienteId || '',
-    cliente: row.cliente_nome || row.cliente || 'Cliente Balcao',
+    cliente: stripUuidPrefix(row.cliente_nome || row.cliente || 'Cliente Balcao', 'Cliente Balcao'),
     vendedorId: row.vendedor_id || row.vendedorId || '',
-    vendedor: row.vendedor_nome || row.vendedor || '',
-    usuario: row.usuario || '',
+    vendedor: stripUuidPrefix(row.vendedor_nome || row.vendedor || '', ''),
+    usuario: stripUuidPrefix(row.usuario || '', ''),
     subtotal: toNumber(row.subtotal),
     desconto: toNumber(row.desconto),
     total: toNumber(row.total),
@@ -243,8 +259,9 @@ function vendaFromDb(row, itens = []) {
     status: row.status || 'FINALIZADA',
     items: itens.map((i) => ({
       id: i.produto_id || i.id,
+      itemId: i.id,
       codigo: i.codigo || '',
-      nome: i.nome || i.descricao || '',
+      nome: stripUuidPrefix(i.nome || i.descricao || '', 'Produto'),
       qtd: toNumber(i.quantidade || i.qtd),
       custo: toNumber(i.custo_unitario || i.custo),
       preco: toNumber(i.valor_unitario || i.preco),
@@ -256,7 +273,7 @@ function vendaFromDb(row, itens = []) {
 function vendaToDb(sale) {
   return stripBadId(withProject({
     id: sale.id,
-    numero: sale.numero || sale.id || '',
+    numero: friendlySaleNumber(sale),
     data: sale.data || new Date().toISOString(),
     data_venda: sale.data || new Date().toISOString(),
     cliente_id: isUuid(sale.clienteId) ? sale.clienteId : null,
@@ -362,7 +379,7 @@ async function replaceSales(sales) {
     const { data: insertedSale, error: vendaError } = await db
       .from(tables.vendas)
       .insert(vendaToDb(sale))
-      .select('id')
+      .select('id, numero')
       .single();
     if (vendaError) throw vendaError;
 
