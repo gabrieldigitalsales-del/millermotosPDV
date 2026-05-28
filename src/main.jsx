@@ -270,10 +270,45 @@ function App() {
 }
 
 function Login({ config, onLogin }) {
-  const [login, setLogin] = useState('admin'); const [senha, setSenha] = useState('admin123');
-  const users = config.usuarios || defaultConfig.usuarios;
-  function submit(e) { e.preventDefault(); const l=normalizeText(login); const user = users.find(u => u.ativo !== false && normalizeText(u.login) === l && String(u.senha) === String(senha)); if (!user) return alert('Usuário ou senha incorretos. Use admin/admin123, financeiro/fin123 ou vendedor/venda123.'); onLogin(user); }
-  return <div className="app-shell login-shell"><div className="login-box window-panel"><header className="panel-title">🔐 Entrar no PDV {config.nomeFantasia}</header><form onSubmit={submit} className="grid-form one padded"><label>Usuário<input value={login} onChange={e=>setLogin(e.target.value)} autoFocus /></label><label>Senha<input type="password" value={senha} onChange={e=>setSenha(e.target.value)} /></label><button className="big green"><Lock/> Entrar</button><p><strong>Acessos iniciais:</strong><br/>admin / admin123<br/>financeiro / fin123<br/>vendedor / venda123</p></form></div></div>;
+  const [login, setLogin] = useState('admin');
+  const [senha, setSenha] = useState('admin123');
+
+  function submit(e) {
+    e.preventDefault();
+    const typedLogin = normalizeText(login);
+    const typedSenha = String(senha).trim();
+
+    const fixedUsers = defaultConfig.usuarios || [];
+    const dbUsers = config.usuarios || [];
+
+    // Primeiro valida os acessos padrao garantidos. Assim, mesmo que a tabela do Supabase
+    // esteja com senha errada ou incompleta, o dono consegue entrar para corrigir.
+    const guaranteedUser = fixedUsers.find((u) =>
+      u.ativo !== false &&
+      normalizeText(u.login) === typedLogin &&
+      String(u.senha).trim() === typedSenha
+    );
+    if (guaranteedUser) {
+      sessionStorage.removeItem('miller_current_user');
+      onLogin(guaranteedUser);
+      return;
+    }
+
+    const dbUser = dbUsers.find((u) =>
+      u.ativo !== false &&
+      normalizeText(u.login) === typedLogin &&
+      String(u.senha || '').trim() === typedSenha
+    );
+    if (dbUser) {
+      sessionStorage.removeItem('miller_current_user');
+      onLogin(dbUser);
+      return;
+    }
+
+    alert('Usuário ou senha incorretos. Use admin/admin123, financeiro/fin123 ou vendedor/venda123.');
+  }
+
+  return <div className="app-shell login-shell"><div className="login-box window-panel"><header className="panel-title">🔐 Entrar no PDV {config.nomeFantasia}</header><form onSubmit={submit} className="grid-form one padded"><label>Usuário<input value={login} onChange={e=>setLogin(e.target.value)} autoFocus /></label><label>Senha<input type="password" value={senha} onChange={e=>setSenha(e.target.value)} /></label><button className="big green"><Lock/> Entrar</button><p><strong>Acessos garantidos:</strong><br/>admin / admin123<br/>financeiro / fin123<br/>vendedor / venda123</p></form></div></div>;
 }
 
 function PDV({ config, clients, products, setProducts, sales, setSales, vendors, movements, setMovements, currentUser }) {

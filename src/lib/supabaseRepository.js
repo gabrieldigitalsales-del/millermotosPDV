@@ -1,15 +1,15 @@
 import { MILLER_PROJECT_ID, requireSupabase, isSupabaseConfigured } from './supabaseClient';
 
 const tables = {
-  config: 'mm_pdv_config',
+  config: 'mm_pdv_configuracoes',
   usuarios: 'mm_pdv_usuarios',
   clientes: 'mm_pdv_clientes',
   fornecedores: 'mm_pdv_fornecedores',
   vendedores: 'mm_pdv_vendedores',
   produtos: 'mm_pdv_produtos',
   vendas: 'mm_pdv_vendas',
-  vendaItens: 'mm_pdv_venda_itens',
-  movimentos: 'mm_pdv_estoque_movimentos',
+  vendaItens: 'mm_pdv_itens_venda',
+  movimentos: 'mm_pdv_movimento_estoque',
 };
 
 const DEFAULT_USERS = [
@@ -91,20 +91,20 @@ function cfgFromDb(row, usuarios) {
 }
 
 function cfgToDb(config) {
-  return withProject({
-    id: 'CONFIG',
+  return {
+    project_id: MILLER_PROJECT_ID,
+    nome_empresa: config.razaoSocial || config.nomeFantasia || 'MILLER MOTOS',
     nome_fantasia: config.nomeFantasia || 'MILLER MOTOS',
-    razao_social: config.razaoSocial || '',
     cnpj: config.cnpj || '',
     email: config.email || '',
     telefone: config.telefone || '',
     endereco: config.endereco || '',
-    cidade: config.cidade || '',
+    cidade: config.cidade || 'SETE LAGOAS - MG',
     chave_pix: config.chavePix || '',
     mensagem_cupom: config.mensagemCupom || '',
     permitir_vendedor_estoque: Boolean(config.permitirVendedorEstoque),
     updated_at: new Date().toISOString(),
-  });
+  };
 }
 
 function clienteFromDb(row) {
@@ -112,7 +112,7 @@ function clienteFromDb(row) {
   return {
     id: cleanId(r.id, 'C'),
     nome: pick(r, ['nome', 'cliente', 'razao_social', 'name'], r.id || 'Cliente'),
-    documento: pick(r, ['documento', 'cpf', 'cnpj'], ''),
+    documento: pick(r, ['documento', 'cpf_cnpj', 'cpf', 'cnpj'], ''),
     telefone: pick(r, ['telefone', 'celular', 'whatsapp'], ''),
     email: pick(r, ['email'], ''),
     endereco: pick(r, ['endereco', 'rua'], ''),
@@ -166,49 +166,65 @@ function produtoFromDb(row) {
   };
 }
 
+function isUuid(value) {
+  return looksUuid(value);
+}
+
+function stripBadId(row) {
+  const copy = { ...row };
+  if (!isUuid(copy.id)) delete copy.id;
+  return copy;
+}
+
 function produtoToDb(p) {
-  return withProject({
-    id: cleanId(p.id, 'P'),
+  return stripBadId(withProject({
+    id: p.id,
     codigo: p.codigo || '',
     nome: p.nome || p.codigo || 'Produto sem nome',
+    descricao: p.nome || p.descricao || p.codigo || 'Produto sem nome',
+    produto: p.nome || p.produto || p.codigo || 'Produto sem nome',
     categoria: p.categoria || '',
-    fornecedor_id: p.fornecedorId || null,
+    fornecedor_id: isUuid(p.fornecedorId) ? p.fornecedorId : null,
     custo: toNumber(p.custo),
     preco: toNumber(p.preco),
+    valor_venda: toNumber(p.preco),
     estoque: toNumber(p.estoque),
+    est_atual: toNumber(p.estoque),
     minimo: toNumber(p.minimo),
     unidade: p.unidade || 'UN',
     ativo: p.ativo !== false,
     updated_at: new Date().toISOString(),
-  });
+  }));
 }
 
 function movimentoFromDb(row) {
   return {
     id: cleanId(row.id, 'M'),
-    data: row.data || row.created_at || new Date().toISOString(),
-    tipo: row.tipo || 'ENTRADA',
+    data: row.created_at || row.data || new Date().toISOString(),
+    tipo: String(row.tipo || 'entrada').toUpperCase().replace('SAIDA', 'SAÍDA'),
     produtoId: row.produto_id || row.produtoId || '',
-    produtoNome: row.produto_nome || row.produtoNome || row.nome || '',
-    qtd: toNumber(row.qtd || row.quantidade),
-    motivo: row.motivo || '',
-    usuario: row.usuario || '',
+    produtoNome: row.descricao || row.produto_nome || row.produtoNome || row.nome || '',
+    qtd: toNumber(row.quantidade || row.qtd),
+    motivo: row.origem || row.motivo || '',
+    usuario: row.usuario_nome || row.usuario || '',
     vendaId: row.venda_id || row.vendaId || '',
   };
 }
 
 function movimentoToDb(m) {
-  return withProject({
-    id: cleanId(m.id, 'M'),
-    data: m.data || new Date().toISOString(),
-    tipo: m.tipo === 'SAÍDA' ? 'SAIDA' : (m.tipo || 'ENTRADA'),
-    produto_id: m.produtoId,
-    produto_nome: m.produtoNome || '',
-    qtd: toNumber(m.qtd),
-    motivo: m.motivo || '',
-    usuario: m.usuario || '',
-    venda_id: m.vendaId || null,
-  });
+  const tipo = String(m.tipo || 'entrada').toLowerCase().includes('sa') ? 'saida' : String(m.tipo || 'entrada').toLowerCase();
+  return stripBadId(withProject({
+    id: m.id,
+    produto_id: isUuid(m.produtoId) ? m.produtoId : null,
+    venda_id: isUuid(m.vendaId) ? m.vendaId : null,
+    tipo: ['entrada', 'saida', 'ajuste'].includes(tipo) ? tipo : 'entrada',
+    origem: m.motivo || 'manual',
+    descricao: m.produtoNome || '',
+    quantidade: toNumber(m.qtd),
+    estoque_antes: toNumber(m.estoqueAntes),
+    estoque_depois: toNumber(m.estoqueDepois),
+    usuario_nome: m.usuario || '',
+  }));
 }
 
 function vendaFromDb(row, itens = []) {
@@ -216,56 +232,58 @@ function vendaFromDb(row, itens = []) {
     id: cleanId(row.id, 'VD'),
     data: row.data_venda || row.data || row.created_at || new Date().toISOString(),
     clienteId: row.cliente_id || row.clienteId || '',
-    cliente: row.cliente || 'Cliente Balcao',
+    cliente: row.cliente_nome || row.cliente || 'Cliente Balcao',
     vendedorId: row.vendedor_id || row.vendedorId || '',
-    vendedor: row.vendedor || '',
+    vendedor: row.vendedor_nome || row.vendedor || '',
     usuario: row.usuario || '',
     subtotal: toNumber(row.subtotal),
     desconto: toNumber(row.desconto),
     total: toNumber(row.total),
-    pagamento: row.pagamento || row.forma_pagamento || 'Dinheiro',
+    pagamento: row.forma_pagamento || row.pagamento || 'Dinheiro',
     status: row.status || 'FINALIZADA',
     items: itens.map((i) => ({
       id: i.produto_id || i.id,
       codigo: i.codigo || '',
       nome: i.nome || i.descricao || '',
-      qtd: toNumber(i.qtd || i.quantidade),
-      custo: toNumber(i.custo),
-      preco: toNumber(i.preco || i.valor_unitario),
+      qtd: toNumber(i.quantidade || i.qtd),
+      custo: toNumber(i.custo_unitario || i.custo),
+      preco: toNumber(i.valor_unitario || i.preco),
       total: toNumber(i.total),
     })),
   };
 }
 
 function vendaToDb(sale) {
-  return withProject({
-    id: cleanId(sale.id, 'VD'),
+  return stripBadId(withProject({
+    id: sale.id,
+    numero: sale.numero || sale.id || '',
+    data: sale.data || new Date().toISOString(),
     data_venda: sale.data || new Date().toISOString(),
-    cliente_id: sale.clienteId || null,
-    cliente: sale.cliente || 'Cliente Balcao',
-    vendedor_id: sale.vendedorId || null,
-    vendedor: sale.vendedor || '',
-    usuario: sale.usuario || '',
+    cliente_id: isUuid(sale.clienteId) ? sale.clienteId : null,
+    vendedor_id: isUuid(sale.vendedorId) ? sale.vendedorId : null,
+    cliente_nome: sale.cliente || 'Cliente Balcao',
+    vendedor_nome: sale.vendedor || '',
     subtotal: toNumber(sale.subtotal),
     desconto: toNumber(sale.desconto),
     total: toNumber(sale.total),
-    pagamento: sale.pagamento || 'Dinheiro',
+    forma_pagamento: sale.pagamento || 'Dinheiro',
     status: sale.status || 'FINALIZADA',
     updated_at: new Date().toISOString(),
-  });
+  }));
 }
 
 function itemToDb(sale, item) {
-  return withProject({
-    venda_id: sale.id,
-    produto_id: item.id || item.produtoId,
+  return stripBadId(withProject({
+    id: item.itemId || undefined,
+    venda_id: sale.__dbId || sale.id,
+    produto_id: isUuid(item.id || item.produtoId) ? (item.id || item.produtoId) : null,
     codigo: item.codigo || '',
-    nome: item.nome || '',
-    qtd: toNumber(item.qtd),
-    custo: toNumber(item.custo),
-    preco: toNumber(item.preco),
-    total: toNumber(item.total),
-  });
+    descricao: item.nome || item.descricao || '',
+    quantidade: toNumber(item.qtd),
+    valor_unitario: toNumber(item.preco),
+    custo_unitario: toNumber(item.custo),
+    total: toNumber(item.total || toNumber(item.preco) * toNumber(item.qtd)),
+  }));
 }
 
 async function selectAll(table, order = 'created_at', ascending = false) {
@@ -277,7 +295,7 @@ async function selectAll(table, order = 'created_at', ascending = false) {
 
 async function replaceRows(table, rows) {
   const db = requireSupabase();
-  const { error: delError } = await projectFilter(db.from(table).delete()).neq('id', '__never__');
+  const { error: delError } = await projectFilter(db.from(table).delete());
   if (delError) throw delError;
   if (!rows || rows.length === 0) return [];
   const { data, error } = await db.from(table).insert(rows.map(withProject)).select();
@@ -287,7 +305,7 @@ async function replaceRows(table, rows) {
 
 async function replaceProdutos(products) {
   const db = requireSupabase();
-  const { error: delError } = await projectFilter(db.from(tables.produtos).delete()).neq('id', '__never__');
+  const { error: delError } = await projectFilter(db.from(tables.produtos).delete());
   if (delError) throw delError;
   if (!products?.length) return [];
   const { error } = await db.from(tables.produtos).insert(products.map(produtoToDb));
@@ -297,7 +315,7 @@ async function replaceProdutos(products) {
 
 async function replaceMovimentos(movements) {
   const db = requireSupabase();
-  const { error: delError } = await projectFilter(db.from(tables.movimentos).delete()).neq('id', '__never__');
+  const { error: delError } = await projectFilter(db.from(tables.movimentos).delete());
   if (delError) throw delError;
   if (!movements?.length) return [];
   const { error } = await db.from(tables.movimentos).insert(movements.map(movimentoToDb));
@@ -307,21 +325,26 @@ async function replaceMovimentos(movements) {
 
 async function replaceConfig(config) {
   const db = requireSupabase();
-  const { error: configError } = await db.from(tables.config).upsert(cfgToDb(config), { onConflict: 'project_id,id' });
+  const { error: configError } = await db.from(tables.config).upsert(cfgToDb(config), { onConflict: 'project_id' });
   if (configError) throw configError;
   const users = mergeDefaultUsers(config.usuarios || []);
-  const { error: delUsersError } = await projectFilter(db.from(tables.usuarios).delete()).neq('id', '__never__');
+  const { error: delUsersError } = await projectFilter(db.from(tables.usuarios).delete());
   if (delUsersError) throw delUsersError;
   if (users.length) {
-    const { error: usersError } = await db.from(tables.usuarios).insert(users.map((u) => withProject({
-      id: cleanId(u.id, 'U'),
+    const { error: usersError } = await db.from(tables.usuarios).insert(users.map((u) => stripBadId(withProject({
+      id: u.id,
       nome: u.nome,
       login: u.login,
       senha: u.senha,
       perfil: u.perfil,
       ativo: u.ativo !== false,
+      pode_vender: u.perfil !== 'financeiro',
+      pode_estoque: u.perfil === 'administrador',
+      pode_financeiro: u.perfil === 'administrador' || u.perfil === 'financeiro',
+      pode_configuracoes: u.perfil === 'administrador',
+      pode_relatorios: u.perfil === 'administrador' || u.perfil === 'financeiro',
       updated_at: new Date().toISOString(),
-    })));
+    }))));
     if (usersError) throw usersError;
   }
   return config;
@@ -329,17 +352,26 @@ async function replaceConfig(config) {
 
 async function replaceSales(sales) {
   const db = requireSupabase();
-  const { error: delItens } = await projectFilter(db.from(tables.vendaItens).delete()).neq('id', '00000000-0000-0000-0000-000000000000');
+  const { error: delItens } = await projectFilter(db.from(tables.vendaItens).delete());
   if (delItens) throw delItens;
-  const { error: delVendas } = await projectFilter(db.from(tables.vendas).delete()).neq('id', '__never__');
+  const { error: delVendas } = await projectFilter(db.from(tables.vendas).delete());
   if (delVendas) throw delVendas;
   if (!sales?.length) return [];
-  const { error: vendasError } = await db.from(tables.vendas).insert(sales.map(vendaToDb));
-  if (vendasError) throw vendasError;
-  const items = sales.flatMap((sale) => (sale.items || []).map((item) => itemToDb(sale, item)));
-  if (items.length) {
-    const { error: itensError } = await db.from(tables.vendaItens).insert(items);
-    if (itensError) throw itensError;
+
+  for (const sale of sales) {
+    const { data: insertedSale, error: vendaError } = await db
+      .from(tables.vendas)
+      .insert(vendaToDb(sale))
+      .select('id')
+      .single();
+    if (vendaError) throw vendaError;
+
+    const dbSale = { ...sale, __dbId: insertedSale.id };
+    const items = (sale.items || []).map((item) => itemToDb(dbSale, item));
+    if (items.length) {
+      const { error: itensError } = await db.from(tables.vendaItens).insert(items);
+      if (itensError) throw itensError;
+    }
   }
   return sales;
 }
@@ -350,15 +382,15 @@ export async function saveResource(resource, value) {
   if (resource === 'products') return replaceProdutos(value);
   if (resource === 'movements') return replaceMovimentos(value);
   if (resource === 'sales') return replaceSales(value);
-  if (resource === 'clients') return replaceRows(tables.clientes, value.map((c) => withProject({
-    id: cleanId(c.id, 'C'), nome: c.nome || 'Cliente', documento: c.documento || '', telefone: c.telefone || '', email: c.email || '', endereco: c.endereco || '', cidade: c.cidade || '', obs: c.obs || ''
-  })));
-  if (resource === 'suppliers') return replaceRows(tables.fornecedores, value.map((s) => withProject({
-    id: cleanId(s.id, 'F'), nome: s.nome || 'Fornecedor', cnpj: s.cnpj || '', telefone: s.telefone || '', email: s.email || '', cidade: s.cidade || '', obs: s.obs || ''
-  })));
-  if (resource === 'vendors') return replaceRows(tables.vendedores, value.map((v) => withProject({
-    id: cleanId(v.id, 'V'), nome: v.nome || 'Vendedor', telefone: v.telefone || '', email: v.email || '', comissao: toNumber(v.comissao), ativo: v.ativo !== false
-  })));
+  if (resource === 'clients') return replaceRows(tables.clientes, value.map((c) => stripBadId(withProject({
+    id: c.id, nome: c.nome || 'Cliente', cpf_cnpj: c.documento || '', telefone: c.telefone || '', email: c.email || '', endereco: c.endereco || '', cidade: c.cidade || '', observacoes: c.obs || '', ativo: true
+  }))));
+  if (resource === 'suppliers') return replaceRows(tables.fornecedores, value.map((s) => stripBadId(withProject({
+    id: s.id, nome: s.nome || 'Fornecedor', cnpj: s.cnpj || '', telefone: s.telefone || '', email: s.email || '', cidade: s.cidade || '', observacoes: s.obs || '', ativo: true
+  }))));
+  if (resource === 'vendors') return replaceRows(tables.vendedores, value.map((v) => stripBadId(withProject({
+    id: v.id, nome: v.nome || 'Vendedor', telefone: v.telefone || '', email: v.email || '', comissao: toNumber(v.comissao), ativo: v.ativo !== false
+  }))));
   return null;
 }
 
@@ -373,7 +405,7 @@ export async function loadAllSupabase(defaults) {
     selectAll(tables.produtos, 'created_at', true),
     selectAll(tables.vendas, 'data_venda', false),
     selectAll(tables.vendaItens, 'created_at', true),
-    selectAll(tables.movimentos, 'data', false),
+    selectAll(tables.movimentos, 'created_at', false),
   ]);
 
   const isEmpty = !configs.length && !clientes.length && !produtos.length && !vendas.length;
