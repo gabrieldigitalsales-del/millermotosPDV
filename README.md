@@ -39,3 +39,11 @@ Esta versão usa versões fixas e compatíveis:
 - react ^18.3.1
 
 Se o Vercel continuar usando dependências antigas, apague `package-lock.json` do repositório, faça commit novamente e rode o deploy limpando o cache.
+
+## Correção importante: erro id NULL
+
+Se aparecer o erro `null value in column "id" of relation "mm_pdv_produtos" violates not-null constraint`, rode no Supabase:
+
+`supabase/correcao_id_default_not_null.sql`
+
+Depois faça redeploy no Vercel com Clear Build Cache.
