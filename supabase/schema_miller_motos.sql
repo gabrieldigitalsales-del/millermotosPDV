@@ -138,7 +138,7 @@ create table if not exists public.mm_pdv_produtos (
 create table if not exists public.mm_pdv_vendas (
   project_id uuid not null default '9f1f4df2-5f5a-4a7d-9f34-8a9be4412026',
   id text not null,
-  data timestamptz not null default now(),
+  data_venda timestamptz not null default now(),
   cliente_id text,
   cliente text not null default 'Cliente Balcao',
   vendedor_id text,
@@ -259,7 +259,7 @@ create trigger trg_mm_pdv_produtos_busca before insert or update on public.mm_pd
 -- INDICES PARA BUSCA RAPIDA
 create index if not exists idx_mm_pdv_clientes_busca on public.mm_pdv_clientes using gin (busca_normalizada gin_trgm_ops);
 create index if not exists idx_mm_pdv_produtos_busca on public.mm_pdv_produtos using gin (busca_normalizada gin_trgm_ops);
-create index if not exists idx_mm_pdv_vendas_data on public.mm_pdv_vendas (project_id, data desc);
+create index if not exists idx_mm_pdv_vendas_data on public.mm_pdv_vendas (project_id, data_venda desc);
 create index if not exists idx_mm_pdv_movimentos_data on public.mm_pdv_estoque_movimentos (project_id, data desc);
 
 
@@ -331,10 +331,10 @@ end $$;
 
 -- Views uteis para relatorios
 create or replace view public.mm_pdv_relatorio_vendas_diarias as
-select project_id, date_trunc('day', data) as dia, count(*) as quantidade_vendas, sum(total) as faturamento, sum(desconto) as descontos
+select project_id, date_trunc('day', data_venda) as dia, count(*) as quantidade_vendas, sum(total) as faturamento, sum(desconto) as descontos
 from public.mm_pdv_vendas
 where project_id = '9f1f4df2-5f5a-4a7d-9f34-8a9be4412026'
-group by project_id, date_trunc('day', data)
+group by project_id, date_trunc('day', data_venda)
 order by dia desc;
 
 create or replace view public.mm_pdv_relatorio_produtos_mais_vendidos as

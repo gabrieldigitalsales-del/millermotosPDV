@@ -114,7 +114,7 @@ function movimentoToDb(m) {
 function vendaFromDb(row, itens = []) {
   return {
     id: row.id,
-    data: row.data,
+    data: row.data_venda || row.data || row.created_at,
     clienteId: row.cliente_id || '',
     cliente: row.cliente || 'Cliente Balcao',
     vendedorId: row.vendedor_id || '',
@@ -140,7 +140,7 @@ function vendaFromDb(row, itens = []) {
 function vendaToDb(sale) {
   return withProject({
     id: sale.id,
-    data: sale.data || new Date().toISOString(),
+    data_venda: sale.data || new Date().toISOString(),
     cliente_id: sale.clienteId || null,
     cliente: sale.cliente || 'Cliente Balcao',
     vendedor_id: sale.vendedorId || null,
@@ -277,7 +277,7 @@ export async function loadAllSupabase(defaults) {
     selectAll(tables.fornecedores, 'created_at', true),
     selectAll(tables.vendedores, 'created_at', true),
     selectAll(tables.produtos, 'created_at', true),
-    selectAll(tables.vendas, 'data', false),
+    selectAll(tables.vendas, 'data_venda', false),
     selectAll(tables.vendaItens, 'created_at', true),
     selectAll(tables.movimentos, 'data', false),
   ]);
