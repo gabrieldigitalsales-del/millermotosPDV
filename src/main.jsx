@@ -1,128 +1,338 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import QRCode from 'qrcode';
-import { Users, Package, ShoppingCart, Settings, FileBarChart, Truck, UserCog, Boxes, Save, Trash2, Pencil, Search, Printer, LogOut, ShieldCheck, DollarSign, Plus, Download, RefreshCw } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
+import {
+  BadgeDollarSign,
+  CalendarDays,
+  CreditCard,
+  Database,
+  DoorOpen,
+  Download,
+  FileBarChart,
+  FileText,
+  HandCoins,
+  HelpCircle,
+  Lock,
+  Mail,
+  Package,
+  Pencil,
+  Plus,
+  Printer,
+  Receipt,
+  Save,
+  Search,
+  Settings,
+  ShoppingCart,
+  Trash2,
+  Truck,
+  Upload,
+  UserCog,
+  Users,
+} from 'lucide-react';
 import './styles.css';
-import { isSupabaseConfigured, PROJECT_ID } from './lib/supabaseClient';
-import { deleteRow, finalizeSale, getConfig, insertRow, listRows, login, productsPriority, stockEntry, upsertRow } from './lib/repository';
+import { isSupabaseConfigured } from './lib/supabaseClient';
+import { loadAllSupabase, saveResource } from './lib/supabaseRepository';
 
-const emptyProduct = { codigo: '', descricao: '', categoria: 'Geral', unidade: 'UN', preco_custo: 0, preco_venda: 0, estoque: 0, estoque_minimo: 0, ativo: true };
-const emptyClient = { nome: '', cpf_cnpj: '', telefone: '', email: '', endereco: '', cidade: 'Sete Lagoas', observacao: '' };
-const emptySupplier = { nome: '', cnpj: '', telefone: '', email: '', cidade: '', observacao: '' };
-const emptySeller = { nome: '', telefone: '', email: '', comissao_percent: 0, ativo: true };
+const money = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const normalizeText = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const searchableText = (...values) => normalizeText(values.join(' '));
+const onlyNumber = (v) => Number(String(v || '0').replace(',', '.')) || 0;
+const todayISO = () => new Date().toISOString();
+const code = (prefix) => prefix + Date.now().toString().slice(-7);
 
-function normalizeText(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
-function money(value) { return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
-function can(user, area, config) {
-  if (!user) return false;
-  if (user.perfil === 'administrador') return true;
-  if (user.perfil === 'financeiro') return ['financeiro','relatorios','balcao','clientes','configuracoes'].includes(area);
-  if (user.perfil === 'vendedor') {
-    if (area === 'estoque') return Boolean(config?.permitir_vendedor_estoque);
-    return ['balcao','clientes'].includes(area);
+const defaultConfig = {
+  nomeFantasia: 'MILLER MOTOS',
+  razaoSocial: 'MILLER MOTOS PEÇAS E SERVIÇOS',
+  cnpj: '00.000.000/0001-00',
+  email: 'contato@millermotos.com',
+  telefone: '(31) 00000-0000',
+  endereco: 'Rua Principal, 100 - Centro',
+  cidade: 'SETE LAGOAS - MG',
+  chavePix: 'contato@millermotos.com',
+  mensagemCupom: 'Obrigado pela preferência. Volte sempre!',
+  permitirVendedorEstoque: false,
+  usuarios: [
+    { id: 'U001', nome: 'Administrador', login: 'admin', senha: 'admin123', perfil: 'administrador', ativo: true },
+    { id: 'U002', nome: 'Financeiro', login: 'financeiro', senha: 'fin123', perfil: 'financeiro', ativo: true },
+    { id: 'U003', nome: 'Vendedor', login: 'vendedor', senha: 'venda123', perfil: 'vendedor', ativo: true },
+  ],
+};
+
+const defaultClients = [
+  { id: 'C0001', nome: 'Cliente Balcão', documento: '', telefone: '', email: '', endereco: '', cidade: 'SETE LAGOAS', obs: 'Cliente padrão para vendas rápidas.' },
+  { id: 'C0002', nome: 'João da Silva', documento: '000.000.000-00', telefone: '(31) 99999-0000', email: 'joao@email.com', endereco: 'Rua A, 10', cidade: 'SETE LAGOAS', obs: '' },
+];
+const defaultSuppliers = [
+  { id: 'F0001', nome: 'Distribuidora Minas Motos', cnpj: '11.111.111/0001-11', telefone: '(31) 3333-1111', email: 'vendas@minasmotos.com', cidade: 'BELO HORIZONTE', obs: 'Peças em geral' },
+  { id: 'F0002', nome: 'Lubrasil Atacado', cnpj: '22.222.222/0001-22', telefone: '(31) 3333-2222', email: 'contato@lubrasil.com', cidade: 'SETE LAGOAS', obs: 'Lubrificantes' },
+];
+const defaultVendors = [
+  { id: 'V0001', nome: 'Balcão', telefone: '', email: '', comissao: 0, ativo: true },
+  { id: 'V0002', nome: 'Carlos Vendedor', telefone: '(31) 99911-2233', email: 'carlos@email.com', comissao: 2, ativo: true },
+];
+const defaultProducts = [
+  { id: 'P0001', codigo: '111114', nome: 'Óleo 20W50 1L', categoria: 'Lubrificantes', fornecedorId: 'F0002', custo: 24, preco: 35, estoque: 12, minimo: 3, unidade: 'UN' },
+  { id: 'P0002', codigo: '222200', nome: 'Kit Relação 125cc', categoria: 'Transmissão', fornecedorId: 'F0001', custo: 140, preco: 185, estoque: 3, minimo: 2, unidade: 'UN' },
+  { id: 'P0003', codigo: '333310', nome: 'Pastilha de Freio', categoria: 'Freios', fornecedorId: 'F0001', custo: 29, preco: 45, estoque: 10, minimo: 4, unidade: 'JG' },
+  { id: 'P0004', codigo: '444120', nome: 'Cabo de Embreagem', categoria: 'Cabos', fornecedorId: 'F0001', custo: 18, preco: 32, estoque: 6, minimo: 2, unidade: 'UN' },
+];
+const defaultMovements = [
+  { id: 'M0001', data: todayISO(), tipo: 'ENTRADA', produtoId: 'P0001', produtoNome: 'Óleo 20W50 1L', qtd: 12, motivo: 'Estoque inicial', usuario: 'Administrador' },
+  { id: 'M0002', data: todayISO(), tipo: 'ENTRADA', produtoId: 'P0002', produtoNome: 'Kit Relação 125cc', qtd: 3, motivo: 'Estoque inicial', usuario: 'Administrador' },
+];
+
+function SyncStatus({ loading, error }) {
+  if (loading) {
+    return <div className="loading-screen"><div className="window-panel mid center"><h2>🔄 Carregando dados do Supabase...</h2><p>Aguarde enquanto o PDV MILLER MOTOS sincroniza os dados.</p></div></div>;
   }
-  return false;
+  if (error) {
+    return <div className="loading-screen"><div className="window-panel mid center"><h2>⚠️ Supabase não conectado</h2><p>{error}</p><p>Configure as variáveis no Vercel: <code>VITE_SUPABASE_URL</code>, <code>VITE_SUPABASE_ANON_KEY</code> e <code>VITE_MM_PROJECT_ID</code>.</p></div></div>;
+  }
+  return null;
+}
+
+function permissions(user, config) {
+  const perfil = user?.perfil || 'vendedor';
+  return {
+    canSell: ['administrador','financeiro','vendedor'].includes(perfil),
+    canClients: ['administrador','financeiro','vendedor'].includes(perfil),
+    canStock: perfil === 'administrador' || (perfil === 'vendedor' && config.permitirVendedorEstoque),
+    canProducts: perfil === 'administrador' || (perfil === 'vendedor' && config.permitirVendedorEstoque),
+    canFinance: ['administrador','financeiro'].includes(perfil),
+    canConfig: perfil === 'administrador',
+    canBackup: perfil === 'administrador',
+    canReports: ['administrador','financeiro'].includes(perfil),
+    canSuppliers: perfil === 'administrador',
+    canVendors: perfil === 'administrador',
+  };
 }
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [screen, setScreen] = useState('balcao');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [config, setConfig] = useState(null);
-  const [data, setData] = useState({ clientes: [], produtos: [], fornecedores: [], vendedores: [], vendas: [], movimento: [], usuarios: [] });
+  const [screen, setScreen] = useState('pdv');
+  const [openMenu, setOpenMenu] = useState(null);
+  const [configRaw, setConfigRaw] = useState(defaultConfig);
+  const [clientsRaw, setClientsRaw] = useState(defaultClients);
+  const [suppliersRaw, setSuppliersRaw] = useState(defaultSuppliers);
+  const [vendorsRaw, setVendorsRaw] = useState(defaultVendors);
+  const [productsRaw, setProductsRaw] = useState(defaultProducts);
+  const [salesRaw, setSalesRaw] = useState([]);
+  const [movementsRaw, setMovementsRaw] = useState(defaultMovements);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [dataError, setDataError] = useState('');
+  const persistEnabledRef = useRef(false);
 
-  async function loadAll() {
-    setLoading(true); setError('');
-    try {
-      if (!isSupabaseConfigured) throw new Error('Supabase não configurado. Coloque VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Vercel.');
-      const [cfg, clientes, produtos, fornecedores, vendedores, vendas, movimento, usuarios] = await Promise.all([
-        getConfig(), listRows('clientes', 'nome', true), listRows('produtos', 'descricao', true), listRows('fornecedores', 'nome', true), listRows('vendedores', 'nome', true), listRows('vendas'), listRows('movimento_estoque'), listRows('usuarios', 'nome', true)
-      ]);
-      setConfig(cfg);
-      setData({ clientes, produtos, fornecedores, vendedores, vendas, movimento, usuarios });
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+  useEffect(() => {
+    let active = true;
+    async function loadData() {
+      if (!isSupabaseConfigured) {
+        setDataError('Supabase não configurado. O sistema agora trabalha direto no Supabase para sincronizar entre dispositivos.');
+        setDataLoading(false);
+        return;
+      }
+      try {
+        const data = await loadAllSupabase({
+          config: defaultConfig,
+          clients: defaultClients,
+          suppliers: defaultSuppliers,
+          vendors: defaultVendors,
+          products: defaultProducts,
+          sales: [],
+          movements: defaultMovements,
+        });
+        if (!active) return;
+        setConfigRaw(data.config);
+        setClientsRaw(data.clients);
+        setSuppliersRaw(data.suppliers);
+        setVendorsRaw(data.vendors);
+        setProductsRaw(data.products);
+        setSalesRaw(data.sales);
+        setMovementsRaw(data.movements);
+        persistEnabledRef.current = true;
+        setDataError('');
+      } catch (error) {
+        console.error(error);
+        if (active) setDataError(error.message || 'Erro ao carregar dados do Supabase.');
+      } finally {
+        if (active) setDataLoading(false);
+      }
+    }
+    loadData();
+    return () => { active = false; };
+  }, []);
+
+  function makeSyncedSetter(resource, rawSetter) {
+    return (updater) => {
+      rawSetter((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        if (persistEnabledRef.current) {
+          saveResource(resource, next).catch((error) => {
+            console.error(error);
+            alert('Erro ao salvar no Supabase: ' + (error.message || error));
+          });
+        }
+        return next;
+      });
+    };
   }
-  useEffect(() => { loadAll(); }, []);
 
-  if (!user) return <Login onLogin={setUser} error={error} setError={setError} />;
-  const nav = [
-    ['balcao','🛒 Balcão', ShoppingCart], ['clientes','👥 Clientes', Users], ['produtos','📦 Produtos', Package], ['fornecedores','🚚 Fornecedores', Truck], ['vendedores','🧑‍🔧 Vendedores', UserCog], ['estoque','📦 Entrada/Saída Estoque', Boxes], ['relatorios','📊 Relatórios', FileBarChart], ['configuracoes','⚙️ Configurações', Settings]
+  const config = configRaw;
+  const clients = clientsRaw;
+  const suppliers = suppliersRaw;
+  const vendors = vendorsRaw;
+  const products = productsRaw;
+  const sales = salesRaw;
+  const movements = movementsRaw;
+  const setConfig = makeSyncedSetter('config', setConfigRaw);
+  const setClients = makeSyncedSetter('clients', setClientsRaw);
+  const setSuppliers = makeSyncedSetter('suppliers', setSuppliersRaw);
+  const setVendors = makeSyncedSetter('vendors', setVendorsRaw);
+  const setProducts = makeSyncedSetter('products', setProductsRaw);
+  const setSales = makeSyncedSetter('sales', setSalesRaw);
+  const setMovements = makeSyncedSetter('movements', setMovementsRaw);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('miller_current_user') || 'null'); } catch { return null; }
+  });
+  const perm = permissions(currentUser, config);
+
+  if (dataLoading || dataError) return <SyncStatus loading={dataLoading} error={dataError} />;
+
+  function login(user) { setCurrentUser(user); sessionStorage.setItem('miller_current_user', JSON.stringify(user)); }
+  function logout() { setCurrentUser(null); sessionStorage.removeItem('miller_current_user'); }
+  if (!currentUser) return <Login config={config} onLogin={login} />;
+
+  function go(target) {
+    const checks = {
+      produtos: perm.canProducts, estoque: perm.canStock, fornecedores: perm.canSuppliers, vendedores: perm.canVendors,
+      financeiro: perm.canFinance, relatorios: perm.canReports, config: perm.canConfig, backup: perm.canBackup, movimentos: perm.canStock,
+    };
+    if (checks[target] === false) return alert('Acesso negado para este perfil. Entre com senha de administrador ou libere a permissão.');
+    setScreen(target); setOpenMenu(null);
+  }
+
+  const menu = {
+    CADASTROS: [
+      { label: '👥 Cadastro de Clientes', screen: 'clientes' },
+      { label: '📦 Cadastro de Produtos / Peças', screen: 'produtos' },
+      { label: '🚚 Cadastro de Fornecedores', screen: 'fornecedores' },
+      { label: '👨‍💼 Cadastro de Vendedores', screen: 'vendedores' },
+    ],
+    'VENDA BALCÃO': [
+      { label: '🛒 Abrir PDV / Venda Balcão', screen: 'pdv' },
+      { label: '🧾 Histórico de Vendas', screen: 'vendas' },
+      { label: '💳 Pix / QR Code', screen: 'pix' },
+    ],
+    ESTOQUE: [
+      { label: '📦 Produtos e Estoque', screen: 'produtos' },
+      { label: '🔁 Relação Entrada/Saída', screen: 'movimentos' },
+      { label: '⚠️ Produtos com Estoque Baixo', screen: 'estoque' },
+    ],
+    FINANCEIRO: [
+      { label: '💰 Resumo Financeiro', screen: 'financeiro' },
+      { label: '📊 Relatórios completos', screen: 'relatorios' },
+    ],
+    FERRAMENTAS: [
+      { label: '🔁 Entrada/Saída de Estoque', screen: 'movimentos' },
+      { label: '⚙️ Configurações da Empresa e Usuários', screen: 'config' },
+      { label: '💾 Backup e Restauração', screen: 'backup' },
+    ],
+    AJUDA: [ { label: '🆘 Como usar o sistema', screen: 'ajuda' } ],
+  };
+  const shortcuts = [
+    ['🛒','PDV Balcão',ShoppingCart,'pdv'], ['👥','Clientes',Users,'clientes'], ['📦','Produtos',Package,'produtos'],
+    ['🚚','Fornec.',Truck,'fornecedores'], ['👨‍💼','Vendedores',UserCog,'vendedores'], ['🔁','Estoque',Database,'movimentos'],
+    ['🧾','Vendas',Receipt,'vendas'], ['💰','Financeiro',BadgeDollarSign,'financeiro'], ['📊','Relatórios',FileBarChart,'relatorios'],
+    ['⚙️','Config.',Settings,'config'], ['💾','Backup',Database,'backup'],
   ];
+
   return <div className="app-shell">
-    <div className="titlebar"><span className="brand-icon">🏍️</span>PDV MILLER MOTOS - Supabase Online <span className="project">Projeto: {PROJECT_ID}</span></div>
-    <nav className="menu-bar">{nav.map(([id,label,Icon]) => <button key={id} className={screen===id?'active':''} disabled={!can(user, id==='produtos'?'estoque':id, config)} onClick={()=>setScreen(id)}><Icon size={16}/>{label}</button>)}<button onClick={loadAll}><RefreshCw size={16}/> Atualizar</button><button onClick={()=>setUser(null)}><LogOut size={16}/> Sair</button></nav>
-    <div className="toolbar"><strong>Usuário:</strong> {user.nome} | <strong>Perfil:</strong> {user.perfil} | <strong>Status:</strong> {isSupabaseConfigured ? '✅ Supabase conectado' : '❌ Supabase não configurado'} {loading && ' | Carregando...'}</div>
-    {error && <div className="error">{error}</div>}
+    <div className="titlebar"><span className="brand-icon">🏍️</span> Programa Oficina Mecânica + PDV + Estoque + Financeiro - Licenciado para {config.nomeFantasia}<span className="window-buttons">— □ ×</span></div>
+    <nav className="menu-bar">{Object.keys(menu).map(m => <button key={m} onClick={() => setOpenMenu(openMenu === m ? null : m)} className={openMenu === m ? 'active' : ''}>{m}</button>)}</nav>
+    <div className="toolbar">{shortcuts.map(([emoji,label,Icon,target]) => <button key={label} className="shortcut" onClick={() => go(target)}><div className="shortcut-emoji">{emoji}</div><Icon size={22}/><span>{label}</span></button>)}</div>
+    {openMenu && <div className="dropdown">{menu[openMenu].map(item => <button key={item.label} onClick={() => go(item.screen)}><FileText size={18}/> {item.label}</button>)}</div>}
     <main className="workspace">
-      {screen==='balcao' && <Balcao data={data} config={config} user={user} reload={loadAll}/>}      
-      {screen==='clientes' && <Crud title="👥 Cadastro de Clientes" rows={data.clientes} empty={emptyClient} table="clientes" fields={['nome','cpf_cnpj','telefone','email','endereco','cidade','observacao']} reload={loadAll}/>}      
-      {screen==='produtos' && <Crud title="📦 Cadastro de Produtos / Peças" rows={data.produtos} empty={emptyProduct} table="produtos" fields={['codigo','descricao','categoria','unidade','preco_custo','preco_venda','estoque','estoque_minimo','ativo']} reload={loadAll}/>}      
-      {screen==='fornecedores' && <Crud title="🚚 Cadastro de Fornecedores" rows={data.fornecedores} empty={emptySupplier} table="fornecedores" fields={['nome','cnpj','telefone','email','cidade','observacao']} reload={loadAll}/>}      
-      {screen==='vendedores' && <Crud title="🧑‍🔧 Cadastro de Vendedores" rows={data.vendedores} empty={emptySeller} table="vendedores" fields={['nome','telefone','email','comissao_percent','ativo']} reload={loadAll}/>}      
-      {screen==='estoque' && <Estoque data={data} user={user} reload={loadAll}/>}      
-      {screen==='relatorios' && <Relatorios data={data}/>}      
-      {screen==='configuracoes' && <Configuracoes config={config} usuarios={data.usuarios} reload={loadAll}/>}      
+      {screen === 'pdv' && <PDV currentUser={currentUser} config={config} clients={clients} products={products} setProducts={setProducts} sales={sales} setSales={setSales} vendors={vendors} movements={movements} setMovements={setMovements} />}
+      {screen === 'clientes' && <Clients clients={clients} setClients={setClients} />}
+      {screen === 'produtos' && <Products products={products} setProducts={setProducts} suppliers={suppliers} currentUser={currentUser} config={config} movements={movements} setMovements={setMovements} />}
+      {screen === 'fornecedores' && <Suppliers suppliers={suppliers} setSuppliers={setSuppliers} />}
+      {screen === 'vendedores' && <Vendors vendors={vendors} setVendors={setVendors} />}
+      {screen === 'movimentos' && <StockMovements products={products} setProducts={setProducts} movements={movements} setMovements={setMovements} currentUser={currentUser} canEdit={perm.canStock} />}
+      {screen === 'vendas' && <SalesHistory sales={sales} config={config} />}
+      {screen === 'pix' && <Pix config={config} setConfig={setConfig} canEdit={perm.canConfig} />}
+      {screen === 'financeiro' && <Finance sales={sales} products={products} />}
+      {screen === 'relatorios' && <Reports sales={sales} products={products} clients={clients} vendors={vendors} suppliers={suppliers} movements={movements} />}
+      {screen === 'estoque' && <LowStock products={products} />}
+      {screen === 'config' && <SettingsScreen config={config} setConfig={setConfig} />}
+      {screen === 'backup' && <Backup config={config} clients={clients} suppliers={suppliers} vendors={vendors} products={products} sales={sales} movements={movements} setConfig={setConfig} setClients={setClients} setSuppliers={setSuppliers} setVendors={setVendors} setProducts={setProducts} setSales={setSales} setMovements={setMovements} />}
+      {screen === 'ajuda' && <Help />}
     </main>
-    <footer className="statusbar">Sete Lagoas - MG | MILLER MOTOS | Todos os dados são salvos direto no Supabase</footer>
+    <footer className="statusbar"><span>{config.cidade}</span><span>{new Date().toLocaleDateString('pt-BR')}</span><span>Usuário: {currentUser.nome} ({currentUser.perfil})</span><button className="status-logout" onClick={logout}>Sair</button><span className="pc">PC PDV</span><span>Supabase direto</span><span>{config.nomeFantasia}</span></footer>
   </div>;
 }
 
-function Login({ onLogin, error, setError }) {
-  const [usuario, setUsuario] = useState('admin');
-  const [senha, setSenha] = useState('admin123');
-  async function submit(e) {
-    e.preventDefault(); setError('');
-    try { onLogin(await login(usuario, senha)); }
-    catch (err) { setError(err.message); }
-  }
-  return <div className="login-bg"><form className="login-card" onSubmit={submit}><h1>🏍️ PDV MILLER MOTOS</h1><p>Sistema online com Supabase</p>{error && <div className="error">{error}</div>}<label>Usuário<input value={usuario} onChange={e=>setUsuario(e.target.value)}/></label><label>Senha<input type="password" value={senha} onChange={e=>setSenha(e.target.value)}/></label><button><ShieldCheck/> Entrar</button><small>admin/admin123 | financeiro/fin123 | vendedor/venda123</small></form></div>
+function Login({ config, onLogin }) {
+  const [login, setLogin] = useState('admin'); const [senha, setSenha] = useState('admin123');
+  const users = config.usuarios || defaultConfig.usuarios;
+  function submit(e) { e.preventDefault(); const user = users.find(u => u.ativo !== false && u.login === login && u.senha === senha); if (!user) return alert('Usuário ou senha incorretos.'); onLogin(user); }
+  return <div className="app-shell login-shell"><div className="login-box window-panel"><header className="panel-title">🔐 Entrar no PDV {config.nomeFantasia}</header><form onSubmit={submit} className="grid-form one padded"><label>Usuário<input value={login} onChange={e=>setLogin(e.target.value)} autoFocus /></label><label>Senha<input type="password" value={senha} onChange={e=>setSenha(e.target.value)} /></label><button className="big green"><Lock/> Entrar</button><p><strong>Acessos iniciais:</strong><br/>admin / admin123<br/>financeiro / fin123<br/>vendedor / venda123</p></form></div></div>;
 }
 
-function Crud({ title, rows, empty, table, fields, reload }) {
-  const [form, setForm] = useState(empty);
-  const [q, setQ] = useState('');
-  const filtered = rows.filter(r => normalizeText(Object.values(r).join(' ')).includes(normalizeText(q)));
-  async function save() { await upsertRow(table, form); setForm(empty); await reload(); }
-  async function remove(id) { if (confirm('Excluir registro?')) { await deleteRow(table, id); await reload(); } }
-  return <div className="window-panel full"><header className="panel-title">{title}</header><div className="crud-layout"><section><input className="search-input" placeholder="Pesquisar..." value={q} onChange={e=>setQ(e.target.value)}/><div className="list-box">{filtered.map(r=><button key={r.id} onClick={()=>setForm(r)}><strong>{r.nome || r.descricao || r.codigo}</strong><span>{r.telefone || r.categoria || r.cidade}</span></button>)}</div></section><section className="form-grid">{fields.map(f=><label key={f}>{labelOf(f)}{typeof empty[f] === 'boolean' ? <select value={String(form[f] ?? true)} onChange={e=>setForm({...form,[f]:e.target.value==='true'})}><option value="true">Sim</option><option value="false">Não</option></select> : <input value={form[f] ?? ''} type={['preco_custo','preco_venda','estoque','estoque_minimo','comissao_percent'].includes(f)?'number':'text'} step="0.01" onChange={e=>setForm({...form,[f]:e.target.value})}/>}</label>)}<div className="actions"><button onClick={save}><Save/> Salvar</button><button onClick={()=>setForm(empty)}><Plus/> Novo</button>{form.id && <button onClick={()=>remove(form.id)}><Trash2/> Excluir</button>}</div></section></div></div>
+function PDV({ config, clients, products, setProducts, sales, setSales, vendors, movements, setMovements, currentUser }) {
+  const [clientId, setClientId] = useState(clients[0]?.id || '');
+  const [vendorId, setVendorId] = useState(vendors[0]?.id || '');
+  const [search, setSearch] = useState(''); const [cart, setCart] = useState([]); const [payment, setPayment] = useState('Dinheiro'); const [discount, setDiscount] = useState(0); const [lastSale, setLastSale] = useState(null);
+  const searchTerm = normalizeText(search);
+  const saleRank = useMemo(() => {
+    const rank = {};
+    sales.forEach(sale => (sale.items || []).forEach(item => {
+      rank[item.id] = (rank[item.id] || 0) + Number(item.qtd || 0);
+    }));
+    movements.filter(m => m.tipo === 'SAÍDA').forEach(m => {
+      rank[m.produtoId] = (rank[m.produtoId] || 0) + Number(m.qtd || 0);
+    });
+    return rank;
+  }, [sales, movements]);
+  const rankProducts = (list) => [...list].sort((a,b) => {
+    const score = (saleRank[b.id] || 0) - (saleRank[a.id] || 0);
+    if (score !== 0) return score;
+    if ((b.estoque || 0) !== (a.estoque || 0)) return (b.estoque || 0) - (a.estoque || 0);
+    return normalizeText(a.nome).localeCompare(normalizeText(b.nome));
+  });
+  const filtered = products
+    .filter(p => !searchTerm || searchableText(p.codigo,p.nome,p.categoria).includes(searchTerm))
+    .sort((a,b)=>{ const an=normalizeText(a.nome), bn=normalizeText(b.nome); return (an.startsWith(searchTerm)?0:1)-(bn.startsWith(searchTerm)?0:1) || an.localeCompare(bn);})
+    .slice(0,18);
+  const topProducts = rankProducts(products.filter(p => Number(p.estoque || 0) > 0)).slice(0,18);
+  const displayProducts = searchTerm ? filtered : topProducts;
+  const displayTitle = searchTerm ? '🔎 Resultado da pesquisa' : '⭐ Produtos mais vendidos';
+  const subtotal = cart.reduce((sum,i)=>sum+i.preco*i.qtd,0); const total = Math.max(0, subtotal - onlyNumber(discount));
+  const selectedClient = clients.find(c=>c.id===clientId) || clients[0]; const selectedVendor = vendors.find(v=>v.id===vendorId) || vendors[0];
+  const pixText = `PIX ${config.nomeFantasia}\nChave: ${config.chavePix}\nValor: ${money(total)}`;
+  function addProduct(p){ if(p.estoque<=0) return alert('Produto sem estoque.'); setCart(prev=>{ const ex=prev.find(i=>i.id===p.id); if(ex) return prev.map(i=>i.id===p.id?{...i,qtd:Math.min(i.qtd+1,p.estoque)}:i); return [...prev,{...p,qtd:1}];}); setSearch(''); }
+  function changeQty(id,qtd){ const stock=products.find(p=>p.id===id)?.estoque||0; setCart(prev=>prev.map(i=>i.id===id?{...i,qtd:Math.max(1,Math.min(stock,Number(qtd)||1))}:i)); }
+  function finishSale(){ if(!cart.length) return alert('Adicione produtos ao carrinho.'); const sale={id:code('VEN'),data:todayISO(),cliente:selectedClient?.nome||'Cliente Balcão',clienteId:selectedClient?.id,vendedor:selectedVendor?.nome||currentUser.nome,vendedorId:selectedVendor?.id,usuario:currentUser.nome,items:cart,subtotal,desconto:onlyNumber(discount),total,pagamento:payment}; setSales([sale,...sales]); setProducts(products.map(p=>{ const sold=cart.find(i=>i.id===p.id); return sold?{...p,estoque:Math.max(0,p.estoque-sold.qtd)}:p;})); const outs=cart.map(i=>({id:code('MOV'),data:todayISO(),tipo:'SAÍDA',produtoId:i.id,produtoNome:i.nome,qtd:i.qtd,motivo:`Venda ${sale.id}`,usuario:currentUser.nome,vendaId:sale.id})); setMovements([...outs,...movements]); setLastSale(sale); setCart([]); setDiscount(0); setTimeout(()=>window.print(),200); }
+  return <div className="pdv-grid"><section className="window-panel pdv-main"><header className="panel-title">🛒 VENDA BALCÃO - PDV MILLER MOTOS</header><div className="pdv-top"><label>Cliente<select value={clientId} onChange={e=>setClientId(e.target.value)}>{clients.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</select></label><label>Vendedor<select value={vendorId} onChange={e=>setVendorId(e.target.value)}>{vendors.filter(v=>v.ativo!==false).map(v=><option key={v.id} value={v.id}>{v.nome}</option>)}</select></label><label>Pesquisar peça por código, nome ou categoria<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ex.: O, Ol, oleo, Óleo, pastilha, 111114" /></label></div><div className="quick-products-title">{displayTitle}{searchTerm && <small>Busca inteligente com ou sem acento</small>}</div><div className="search-results quick-products">{displayProducts.length ? displayProducts.map(p=><button key={p.id} onClick={()=>addProduct(p)} className={p.estoque<=0?'disabled-product':''}><span>📦 {p.codigo}</span><strong>{p.nome}</strong><span>{money(p.preco)}</span><span>Est: {p.estoque}</span><small>Saídas: {saleRank[p.id] || 0}</small></button>) : <div className="empty-result">Nenhum produto encontrado. Cadastre peças ou altere a pesquisa.</div>}</div><table className="data-table"><thead><tr><th>Produto</th><th>Qtd</th><th>Unit.</th><th>Total</th><th></th></tr></thead><tbody>{cart.map(item=><tr key={item.id}><td>{item.codigo} - {item.nome}</td><td><input className="qty" type="number" value={item.qtd} onChange={e=>changeQty(item.id,e.target.value)} /></td><td>{money(item.preco)}</td><td>{money(item.preco*item.qtd)}</td><td><button className="mini-danger" onClick={()=>setCart(cart.filter(i=>i.id!==item.id))}>X</button></td></tr>)}{!cart.length&&<tr><td colSpan="5" className="empty">Nenhum produto no carrinho.</td></tr>}</tbody></table><div className="pdv-bottom"><label>Pagamento<select value={payment} onChange={e=>setPayment(e.target.value)}><option>Dinheiro</option><option>Pix</option><option>Cartão Débito</option><option>Cartão Crédito</option><option>Fiado / Conta Cliente</option></select></label><label>Desconto R$<input value={discount} onChange={e=>setDiscount(e.target.value)} /></label><button className="big green" onClick={finishSale}><Receipt/> Finalizar e Imprimir Cupom</button><button className="big" onClick={()=>setCart([])}><Trash2/> Limpar Venda</button></div></section><aside className="window-panel pdv-side"><header className="panel-title">💳 Resumo / Pix</header><div className="total-box"><span>Subtotal</span><strong>{money(subtotal)}</strong><span>Desconto</span><strong>{money(onlyNumber(discount))}</strong><span>Total</span><strong className="total-value">{money(total)}</strong></div><div className="qr-box"><QRCodeCanvas value={pixText} size={180}/><small>Chave Pix: {config.chavePix}</small></div></aside><div className="print-receipt">{lastSale&&<ReceiptPrint sale={lastSale} config={config}/>}</div></div>;
 }
-function labelOf(f){return ({cpf_cnpj:'CPF/CNPJ', preco_custo:'Preço custo', preco_venda:'Preço venda', estoque_minimo:'Estoque mínimo', comissao_percent:'Comissão %', permitir_vendedor_estoque:'Vendedor pode mexer no estoque'}[f] || f.replace('_',' '));}
+function ReceiptPrint({ sale, config }) { return <div className="receipt-paper"><h2>{config.nomeFantasia}</h2><p>{config.razaoSocial}</p><p>CNPJ: {config.cnpj}</p><p>{config.endereco}</p><p>{config.telefone} - {config.email}</p><hr/><p>CUPOM NÃO FISCAL: {sale.id}</p><p>Data: {new Date(sale.data).toLocaleString('pt-BR')}</p><p>Cliente: {sale.cliente}</p><p>Vendedor: {sale.vendedor}</p><hr/>{sale.items.map(i=><p key={i.id}>{i.qtd}x {i.nome}<br/>{money(i.preco)} un. = {money(i.preco*i.qtd)}</p>)}<hr/><p>Subtotal: {money(sale.subtotal)}</p><p>Desconto: {money(sale.desconto)}</p><h3>Total: {money(sale.total)}</h3><p>Pagamento: {sale.pagamento}</p>{sale.pagamento==='Pix'&&<><p>PIX: {config.chavePix}</p><QRCodeCanvas value={`PIX ${config.chavePix} ${sale.total}`} size={120}/></>}<hr/><p>{config.mensagemCupom}</p></div>; }
 
-function Balcao({ data, config, user, reload }) {
-  const [q, setQ] = useState('');
-  const [cart, setCart] = useState([]);
-  const [clienteId, setClienteId] = useState('');
-  const [vendedorId, setVendedorId] = useState('');
-  const [forma, setForma] = useState('Dinheiro');
-  const [desconto, setDesconto] = useState(0);
-  const [lastSale, setLastSale] = useState(null);
-  const [qr, setQr] = useState('');
+function CrudPanel({ title, q, setQ, onNew, onSave, children }) { return <div className="window-panel full"><header className="panel-title">{title}</header><div className="crud-toolbar"><label>Pesquisar<input value={q} onChange={e=>setQ(e.target.value)} placeholder="Busca inteligente com ou sem acento"/></label><button onClick={onNew}><Plus/> Novo</button><button onClick={onSave}><Save/> Salvar</button><button onClick={()=>window.print()}><Printer/> Imprimir</button></div>{children}</div>; }
+function Clients({ clients, setClients }) { const blank={id:'',nome:'',documento:'',telefone:'',email:'',endereco:'',cidade:'SETE LAGOAS',obs:''}; const [form,setForm]=useState(blank); const [q,setQ]=useState(''); const query=normalizeText(q); const list=clients.filter(c=>!query||searchableText(c.id,c.nome,c.documento,c.telefone,c.email,c.endereco,c.cidade,c.obs).includes(query)); const save=()=>{ if(!form.nome.trim()) return alert('Informe o nome do cliente.'); if(form.id) setClients(clients.map(c=>c.id===form.id?form:c)); else setClients([{...form,id:code('C')},...clients]); setForm(blank);}; return <CrudPanel title="👥 Cadastro de Clientes" q={q} setQ={setQ} onNew={()=>setForm(blank)} onSave={save}><div className="split"><div className="list-box">{list.map(c=><div key={c.id} onClick={()=>setForm(c)}>👤 {c.id} - {c.nome}<br/><small>{c.telefone} {c.documento}</small></div>)}</div><div className="grid-form two">{['nome','documento','telefone','email','endereco','cidade'].map(f=><label key={f}>{f.toUpperCase()}<input value={form[f]} onChange={e=>setForm({...form,[f]:e.target.value})}/></label>)}<label className="wide">OBS<textarea value={form.obs} onChange={e=>setForm({...form,obs:e.target.value})}/></label><div className="side-actions wide"><button onClick={save}><Save/> Salvar</button><button onClick={()=>form.id&&setClients(clients.filter(c=>c.id!==form.id))}><Trash2/> Excluir</button></div></div></div></CrudPanel>; }
+function Suppliers({ suppliers, setSuppliers }) { const blank={id:'',nome:'',cnpj:'',telefone:'',email:'',cidade:'SETE LAGOAS',obs:''}; const [form,setForm]=useState(blank); const [q,setQ]=useState(''); const list=suppliers.filter(s=>!normalizeText(q)||searchableText(s.id,s.nome,s.cnpj,s.telefone,s.email,s.cidade,s.obs).includes(normalizeText(q))); const save=()=>{ if(!form.nome.trim()) return alert('Informe o fornecedor.'); if(form.id) setSuppliers(suppliers.map(s=>s.id===form.id?form:s)); else setSuppliers([{...form,id:code('F')},...suppliers]); setForm(blank); }; return <CrudPanel title="🚚 Cadastro de Fornecedores" q={q} setQ={setQ} onNew={()=>setForm(blank)} onSave={save}><div className="split"><div className="list-box">{list.map(s=><div key={s.id} onClick={()=>setForm(s)}>🚚 {s.id} - {s.nome}<br/><small>{s.cnpj} {s.telefone}</small></div>)}</div><div className="grid-form two">{['nome','cnpj','telefone','email','cidade','obs'].map(f=><label key={f}>{f.toUpperCase()}<input value={form[f]} onChange={e=>setForm({...form,[f]:e.target.value})}/></label>)}<div className="side-actions wide"><button onClick={save}><Save/> Salvar Fornecedor</button><button onClick={()=>form.id&&setSuppliers(suppliers.filter(s=>s.id!==form.id))}><Trash2/> Excluir</button></div></div></div></CrudPanel>; }
+function Vendors({ vendors, setVendors }) { const blank={id:'',nome:'',telefone:'',email:'',comissao:0,ativo:true}; const [form,setForm]=useState(blank); const [q,setQ]=useState(''); const list=vendors.filter(v=>!normalizeText(q)||searchableText(v.id,v.nome,v.telefone,v.email,v.comissao).includes(normalizeText(q))); const save=()=>{ if(!form.nome.trim()) return alert('Informe o vendedor.'); const payload={...form,comissao:onlyNumber(form.comissao),ativo:form.ativo!==false}; if(form.id) setVendors(vendors.map(v=>v.id===form.id?payload:v)); else setVendors([{...payload,id:code('V')},...vendors]); setForm(blank); }; return <CrudPanel title="👨‍💼 Cadastro de Vendedores" q={q} setQ={setQ} onNew={()=>setForm(blank)} onSave={save}><div className="split"><div className="list-box">{list.map(v=><div key={v.id} onClick={()=>setForm(v)}>👨‍💼 {v.id} - {v.nome}<br/><small>Comissão: {v.comissao || 0}% - {v.ativo?'Ativo':'Inativo'}</small></div>)}</div><div className="grid-form two"><label>NOME<input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></label><label>TELEFONE<input value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})}/></label><label>E-MAIL<input value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>COMISSÃO %<input value={form.comissao} onChange={e=>setForm({...form,comissao:e.target.value})}/></label><label className="wide check-line"><input type="checkbox" checked={form.ativo!==false} onChange={e=>setForm({...form,ativo:e.target.checked})}/> Vendedor ativo</label><div className="side-actions wide"><button onClick={save}><Save/> Salvar Vendedor</button><button onClick={()=>form.id&&setVendors(vendors.filter(v=>v.id!==form.id))}><Trash2/> Excluir</button></div></div></div></CrudPanel>; }
+function Products({ products, setProducts, suppliers, currentUser, config, movements, setMovements }) { const blank={id:'',codigo:'',nome:'',categoria:'',fornecedorId:'',custo:0,preco:0,estoque:0,minimo:0,unidade:'UN'}; const [form,setForm]=useState(blank); const [q,setQ]=useState(''); const query=normalizeText(q); const list=products.filter(p=>!query||searchableText(p.id,p.codigo,p.nome,p.categoria,p.unidade).includes(query)); const save=()=>{ if(!form.nome.trim()) return alert('Informe o nome do produto.'); const old=products.find(p=>p.id===form.id); const payload={...form,custo:onlyNumber(form.custo),preco:onlyNumber(form.preco),estoque:onlyNumber(form.estoque),minimo:onlyNumber(form.minimo)}; if(form.id) { setProducts(products.map(p=>p.id===form.id?payload:p)); if(old && old.estoque !== payload.estoque){ const delta=payload.estoque-old.estoque; setMovements([{id:code('MOV'),data:todayISO(),tipo:delta>=0?'ENTRADA':'SAÍDA',produtoId:payload.id,produtoNome:payload.nome,qtd:Math.abs(delta),motivo:'Ajuste direto no cadastro de produto',usuario:currentUser.nome},...movements]); } } else { const novo={...payload,id:code('P'),codigo:form.codigo||String(Date.now()).slice(-6)}; setProducts([novo,...products]); if(novo.estoque>0) setMovements([{id:code('MOV'),data:todayISO(),tipo:'ENTRADA',produtoId:novo.id,produtoNome:novo.nome,qtd:novo.estoque,motivo:'Cadastro inicial do produto',usuario:currentUser.nome},...movements]); } setForm(blank); }; return <CrudPanel title="📦 Produtos / Peças / Estoque" q={q} setQ={setQ} onNew={()=>setForm(blank)} onSave={save}><div className="split products-split"><table className="data-table"><thead><tr><th>Código</th><th>Produto</th><th>Preço</th><th>Estoque</th></tr></thead><tbody>{list.map(p=><tr key={p.id} onClick={()=>setForm(p)} className={p.estoque<=p.minimo?'zero':''}><td>{p.codigo}</td><td>{p.nome}</td><td>{money(p.preco)}</td><td>{p.estoque}</td></tr>)}</tbody></table><div className="grid-form two"><label>CÓDIGO<input value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value})}/></label><label>NOME<input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></label><label>CATEGORIA<input value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})}/></label><label>FORNECEDOR<select value={form.fornecedorId} onChange={e=>setForm({...form,fornecedorId:e.target.value})}><option value="">Sem fornecedor</option>{suppliers.map(s=><option key={s.id} value={s.id}>{s.nome}</option>)}</select></label>{['unidade','custo','preco','estoque','minimo'].map(f=><label key={f}>{f.toUpperCase()}<input value={form[f]} onChange={e=>setForm({...form,[f]:e.target.value})}/></label>)}<div className="side-actions wide"><button onClick={save}><Save/> Salvar Produto</button><button onClick={()=>form.id&&setProducts(products.filter(p=>p.id!==form.id))}><Trash2/> Excluir</button></div></div></div></CrudPanel>; }
 
-  const selectedCliente = data.clientes.find(c=>c.id===clienteId);
-  const selectedVendedor = data.vendedores.find(v=>v.id===vendedorId);
-  const ranking = useMemo(() => {
-    const sold = {};
-    data.movimento.filter(m=>m.tipo==='saida').forEach(m=>{ sold[m.produto_id]=(sold[m.produto_id]||0)+Number(m.quantidade||0); });
-    return [...data.produtos].filter(p=>p.ativo!==false && Number(p.estoque)>0).sort((a,b)=>(sold[b.id]||0)-(sold[a.id]||0) || a.descricao.localeCompare(b.descricao));
-  }, [data]);
-  const products = q ? data.produtos.filter(p=>normalizeText(`${p.codigo} ${p.descricao} ${p.categoria}`).includes(normalizeText(q))) : ranking.slice(0, 16);
-  const subtotal = cart.reduce((s,i)=>s+Number(i.quantidade)*Number(i.preco_venda),0);
-  const total = Math.max(0, subtotal-Number(desconto||0));
-  useEffect(()=>{ if(config?.chave_pix && forma==='Pix') QRCode.toDataURL(`PIX: ${config.chave_pix} | Valor: ${money(total)} | ${config.empresa}`).then(setQr); else setQr(''); },[config,forma,total]);
-  function add(p){ const existing=cart.find(i=>i.id===p.id); if(existing) setCart(cart.map(i=>i.id===p.id?{...i,quantidade:Number(i.quantidade)+1}:i)); else setCart([...cart,{...p,quantidade:1}]); setQ(''); }
-  async function finish(){ const sale=await finalizeSale({ cliente:selectedCliente, vendedor:selectedVendedor, usuario:user, forma_pagamento:forma, desconto, items:cart }); setLastSale(sale); setCart([]); setDesconto(0); await reload(); setTimeout(()=>window.print(),200); }
-  return <div className="balcao-grid"><div className="window-panel"><header className="panel-title">🛒 Venda de Balcão</header><div className="yellow-line">⭐ Produtos mais vendidos</div><input className="search-big" autoFocus placeholder="Digite O, Ol, oleo, Óleo, código ou descrição..." value={q} onChange={e=>setQ(e.target.value)}/><div className="product-grid">{products.map(p=><button key={p.id} onClick={()=>add(p)}><strong>{p.descricao}</strong><span>{p.codigo} | Estoque: {p.estoque}</span><b>{money(p.preco_venda)}</b></button>)}</div></div><div className="window-panel"><header className="panel-title">🧾 Carrinho / Cupom</header><label>Cliente<select value={clienteId} onChange={e=>setClienteId(e.target.value)}><option value="">Consumidor</option>{data.clientes.map(c=><option key={c.id} value={c.id}>{c.nome}</option>)}</select></label><label>Vendedor<select value={vendedorId} onChange={e=>setVendedorId(e.target.value)}><option value="">{user.nome}</option>{data.vendedores.map(v=><option key={v.id} value={v.id}>{v.nome}</option>)}</select></label><div className="cart-list">{cart.map(i=><div key={i.id}><span>{i.descricao}</span><input type="number" min="1" value={i.quantidade} onChange={e=>setCart(cart.map(x=>x.id===i.id?{...x,quantidade:e.target.value}:x))}/><b>{money(Number(i.quantidade)*Number(i.preco_venda))}</b><button onClick={()=>setCart(cart.filter(x=>x.id!==i.id))}>×</button></div>)}</div><div className="totals"><span>Subtotal {money(subtotal)}</span><label>Desconto<input type="number" value={desconto} onChange={e=>setDesconto(e.target.value)}/></label><strong>Total {money(total)}</strong></div><label>Pagamento<select value={forma} onChange={e=>setForma(e.target.value)}><option>Dinheiro</option><option>Pix</option><option>Cartão Débito</option><option>Cartão Crédito</option></select></label>{qr && <img className="qr" src={qr}/>}<button className="finish" disabled={!cart.length} onClick={finish}>Finalizar e imprimir cupom</button></div><Cupom sale={lastSale} config={config} cart={cart} /></div>
-}
-function Cupom({ sale, config }) { if(!sale) return null; return <div className="print-cupom"><h2>{config?.empresa || 'MILLER MOTOS'}</h2><p>{config?.cnpj}</p><p>{config?.endereco}</p><hr/><p>Venda: {sale.numero} - {new Date(sale.created_at).toLocaleString('pt-BR')}</p><p>Cliente: {sale.cliente_nome}</p><p>Pagamento: {sale.forma_pagamento}</p><h3>Total: {money(sale.total)}</h3><p>Obrigado pela preferência!</p></div> }
+function StockMovements({ products, setProducts, movements, setMovements, currentUser, canEdit }) { const [produtoId,setProdutoId]=useState(products[0]?.id||''); const [tipo,setTipo]=useState('ENTRADA'); const [qtd,setQtd]=useState(1); const [motivo,setMotivo]=useState('Compra / reposição'); const [q,setQ]=useState(''); const list=movements.filter(m=>!normalizeText(q)||searchableText(m.tipo,m.produtoNome,m.motivo,m.usuario,m.vendaId).includes(normalizeText(q))); function registrar(){ if(!canEdit) return alert('Acesso negado para movimentar estoque.'); const prod=products.find(p=>p.id===produtoId); const amount=onlyNumber(qtd); if(!prod||amount<=0) return alert('Informe produto e quantidade.'); if(tipo==='SAÍDA'&&prod.estoque<amount) return alert('Estoque insuficiente.'); setProducts(products.map(p=>p.id===produtoId?{...p,estoque: tipo==='ENTRADA'?p.estoque+amount:p.estoque-amount}:p)); setMovements([{id:code('MOV'),data:todayISO(),tipo,produtoId,produtoNome:prod.nome,qtd:amount,motivo,usuario:currentUser.nome},...movements]); setQtd(1); }
+  return <div className="window-panel full"><header className="panel-title">🔁 Relação de Entrada e Saída do Estoque</header><div className="crud-toolbar"><label>Pesquisar movimentação<input value={q} onChange={e=>setQ(e.target.value)}/></label><button onClick={()=>window.print()}><Printer/> Imprimir Relação</button></div><div className="grid-form movement-form padded"><label>Produto<select value={produtoId} onChange={e=>setProdutoId(e.target.value)}>{products.map(p=><option key={p.id} value={p.id}>{p.codigo} - {p.nome} | Est: {p.estoque}</option>)}</select></label><label>Tipo<select value={tipo} onChange={e=>setTipo(e.target.value)}><option>ENTRADA</option><option>SAÍDA</option></select></label><label>Quantidade<input value={qtd} onChange={e=>setQtd(e.target.value)}/></label><label>Motivo<input value={motivo} onChange={e=>setMotivo(e.target.value)}/></label><button onClick={registrar}><Save/> Registrar Movimento</button></div><table className="data-table"><thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Motivo</th><th>Usuário</th></tr></thead><tbody>{list.map(m=><tr key={m.id} className={m.tipo==='SAÍDA'?'zero':''}><td>{new Date(m.data).toLocaleString('pt-BR')}</td><td>{m.tipo}</td><td>{m.produtoNome}</td><td>{m.qtd}</td><td>{m.motivo}</td><td>{m.usuario}</td></tr>)}</tbody></table></div>; }
 
-function Estoque({ data, user, reload }) { const [produtoId,setProdutoId]=useState(''); const [qtd,setQtd]=useState(1); const [obs,setObs]=useState(''); const produto=data.produtos.find(p=>p.id===produtoId); async function entrada(){ await stockEntry({produto, quantidade:qtd, usuario:user, observacao:obs}); setProdutoId(''); setQtd(1); setObs(''); await reload(); } return <div className="window-panel full"><header className="panel-title">📦 Entrada e Saída de Estoque</header><div className="stock-entry"><label>Produto<select value={produtoId} onChange={e=>setProdutoId(e.target.value)}><option value="">Selecione</option>{data.produtos.map(p=><option key={p.id} value={p.id}>{p.descricao} - estoque {p.estoque}</option>)}</select></label><label>Quantidade<input type="number" value={qtd} onChange={e=>setQtd(e.target.value)}/></label><label>Observação<input value={obs} onChange={e=>setObs(e.target.value)}/></label><button onClick={entrada}><Plus/> Registrar entrada</button></div><table><thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Origem</th><th>Usuário</th></tr></thead><tbody>{data.movimento.map(m=><tr key={m.id}><td>{new Date(m.created_at).toLocaleString('pt-BR')}</td><td>{m.tipo}</td><td>{m.descricao}</td><td>{m.quantidade}</td><td>{m.origem}</td><td>{m.usuario_nome}</td></tr>)}</tbody></table></div> }
-
-function Relatorios({ data }) { const total=data.vendas.reduce((s,v)=>s+Number(v.total),0); const custo=data.movimento.filter(m=>m.tipo==='saida').reduce((s,m)=>{ const p=data.produtos.find(p=>p.id===m.produto_id); return s+Number(m.quantidade||0)*Number(p?.preco_custo||0);},0); const lucro=total-custo; const estoqueBaixo=data.produtos.filter(p=>Number(p.estoque)<=Number(p.estoque_minimo||0)); const porPag=data.vendas.reduce((a,v)=>{a[v.forma_pagamento]=(a[v.forma_pagamento]||0)+Number(v.total); return a;},{}); return <div className="window-panel full"><header className="panel-title">📊 Relatórios completos</header><div className="kpis"><div><span>Vendas</span><b>{data.vendas.length}</b></div><div><span>Faturamento</span><b>{money(total)}</b></div><div><span>Lucro estimado</span><b>{money(lucro)}</b></div><div><span>Produtos</span><b>{data.produtos.length}</b></div><div><span>Clientes</span><b>{data.clientes.length}</b></div><div><span>Estoque baixo</span><b>{estoqueBaixo.length}</b></div></div><h3>Vendas por pagamento</h3><table><tbody>{Object.entries(porPag).map(([k,v])=><tr key={k}><td>{k}</td><td>{money(v)}</td></tr>)}</tbody></table><h3>Estoque baixo</h3><table><tbody>{estoqueBaixo.map(p=><tr key={p.id}><td>{p.descricao}</td><td>{p.estoque}</td><td>Mínimo {p.estoque_minimo}</td></tr>)}</tbody></table></div> }
-
-function Configuracoes({ config, usuarios, reload }) { const [form,setForm]=useState(config||{}); useEffect(()=>setForm(config||{}),[config]); async function save(){ await upsertRow('configuracoes', form); await reload(); alert('Configurações salvas no Supabase.'); } return <div className="window-panel full"><header className="panel-title">⚙️ Configurações</header><div className="form-grid">{['empresa','cnpj','telefone','email','endereco','cidade','chave_pix'].map(f=><label key={f}>{labelOf(f)}<input value={form[f]||''} onChange={e=>setForm({...form,[f]:e.target.value})}/></label>)}<label>Vendedor pode mexer no estoque<select value={String(form.permitir_vendedor_estoque||false)} onChange={e=>setForm({...form,permitir_vendedor_estoque:e.target.value==='true'})}><option value="false">Não</option><option value="true">Sim</option></select></label><button onClick={save}><Save/> Salvar configurações</button></div><h3>Usuários</h3><table><tbody>{usuarios.map(u=><tr key={u.id}><td>{u.nome}</td><td>{u.usuario}</td><td>{u.perfil}</td></tr>)}</tbody></table></div> }
+function SalesHistory({ sales, config }) { const [selected,setSelected]=useState(null); return <div className="window-panel full"><header className="panel-title">🧾 Histórico de Vendas</header><table className="data-table"><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Vendedor</th><th>Pagamento</th><th>Total</th><th>Ação</th></tr></thead><tbody>{sales.map(s=><tr key={s.id}><td>{s.id}</td><td>{new Date(s.data).toLocaleString('pt-BR')}</td><td>{s.cliente}</td><td>{s.vendedor}</td><td>{s.pagamento}</td><td>{money(s.total)}</td><td><button onClick={()=>{setSelected(s);setTimeout(()=>window.print(),100);}}>Imprimir</button></td></tr>)}</tbody></table><div className="print-receipt">{selected&&<ReceiptPrint sale={selected} config={config}/>}</div></div>; }
+function Pix({ config, setConfig, canEdit }) { const [valor,setValor]=useState('0'); const text=`PIX ${config.nomeFantasia}\nChave: ${config.chavePix}\nValor: ${money(onlyNumber(valor))}`; return <div className="window-panel mid"><header className="panel-title">💳 Pix / QR Code</header><div className="pix-screen"><div className="qr-box big"><QRCodeCanvas value={text} size={240}/></div><div className="grid-form two"><label>Valor<input value={valor} onChange={e=>setValor(e.target.value)}/></label><label>Chave Pix<input value={config.chavePix} disabled={!canEdit} onChange={e=>setConfig({...config,chavePix:e.target.value})}/></label><p className="wide">Esse QR Code muda quando você altera a chave Pix ou o valor. Alterar chave Pix exige administrador.</p></div></div></div>; }
+function Finance({ sales, products }) { const total=sales.reduce((s,v)=>s+v.total,0); const lucro=sales.reduce((s,v)=>s+v.items.reduce((a,i)=>a+(i.preco-(i.custo||0))*i.qtd,0),0); const estoque=products.reduce((s,p)=>s+p.preco*p.estoque,0); const custoEstoque=products.reduce((s,p)=>s+p.custo*p.estoque,0); return <div className="window-panel mid"><header className="panel-title">💰 Resumo Financeiro</header><div className="kpi-grid"><Kpi label="Total vendido" value={money(total)}/><Kpi label="Lucro estimado" value={money(lucro)}/><Kpi label="Vendas realizadas" value={sales.length}/><Kpi label="Valor venda estoque" value={money(estoque)}/><Kpi label="Custo do estoque" value={money(custoEstoque)}/><Kpi label="Ticket médio" value={money(sales.length?total/sales.length:0)}/></div></div>; }
+function Reports({ sales, products, clients, vendors, suppliers, movements }) { const [ini,setIni]=useState(''); const [fim,setFim]=useState(''); const period=sales.filter(s=>(!ini||s.data>=new Date(ini).toISOString())&&(!fim||s.data<=new Date(fim+'T23:59:59').toISOString())); const total=period.reduce((a,s)=>a+s.total,0); const lucro=period.reduce((s,v)=>s+v.items.reduce((a,i)=>a+(i.preco-(i.custo||0))*i.qtd,0),0); const byPay=groupSum(period,'pagamento'); const byVendor=groupSum(period,'vendedor'); const sold={}; period.forEach(s=>s.items.forEach(i=>{ sold[i.nome]=(sold[i.nome]||0)+i.qtd; })); const topProducts=Object.entries(sold).sort((a,b)=>b[1]-a[1]).slice(0,10); return <div className="window-panel full"><header className="panel-title">📊 Relatórios Completos</header><div className="crud-toolbar"><label>Data inicial<input type="date" value={ini} onChange={e=>setIni(e.target.value)}/></label><label>Data final<input type="date" value={fim} onChange={e=>setFim(e.target.value)}/></label><button onClick={()=>window.print()}><Printer/> Imprimir Relatório</button></div><div className="kpi-grid"><Kpi label="Faturamento período" value={money(total)}/><Kpi label="Lucro estimado" value={money(lucro)}/><Kpi label="Vendas no período" value={period.length}/><Kpi label="Ticket médio" value={money(period.length?total/period.length:0)}/><Kpi label="Clientes cadastrados" value={clients.length}/><Kpi label="Fornecedores" value={suppliers.length}/><Kpi label="Vendedores" value={vendors.length}/><Kpi label="Produtos" value={products.length}/><Kpi label="Estoque baixo" value={products.filter(p=>p.estoque<=p.minimo).length}/><Kpi label="Movimentos estoque" value={movements.length}/></div><div className="report-grid"><ReportTable title="Vendas por pagamento" rows={Object.entries(byPay)} /><ReportTable title="Vendas por vendedor" rows={Object.entries(byVendor)} /><ReportTable title="Produtos mais vendidos" rows={topProducts} /></div><h3>Produtos com estoque baixo</h3><table className="data-table"><thead><tr><th>Código</th><th>Produto</th><th>Estoque</th><th>Mínimo</th><th>Preço</th></tr></thead><tbody>{products.filter(p=>p.estoque<=p.minimo).map(p=><tr key={p.id} className="zero"><td>{p.codigo}</td><td>{p.nome}</td><td>{p.estoque}</td><td>{p.minimo}</td><td>{money(p.preco)}</td></tr>)}</tbody></table></div>; }
+function groupSum(list,key){ return list.reduce((acc,item)=>{ acc[item[key]||'Não informado']=(acc[item[key]||'Não informado']||0)+item.total; return acc; },{}); }
+function ReportTable({title,rows}){ return <div><h3>{title}</h3><table className="data-table"><tbody>{rows.length?rows.map(([k,v])=><tr key={k}><td>{k}</td><td>{typeof v==='number'&&title!=='Produtos mais vendidos'?money(v):v}</td></tr>):<tr><td>Nenhum dado</td></tr>}</tbody></table></div>; }
+function Kpi({label,value}){ return <div className="kpi"><span>{label}</span><strong>{value}</strong></div>; }
+function LowStock({products}){ return <div className="window-panel full"><header className="panel-title">⚠️ Estoque Baixo</header><table className="data-table"><thead><tr><th>Código</th><th>Produto</th><th>Estoque</th><th>Mínimo</th></tr></thead><tbody>{products.filter(p=>p.estoque<=p.minimo).map(p=><tr className="zero" key={p.id}><td>{p.codigo}</td><td>{p.nome}</td><td>{p.estoque}</td><td>{p.minimo}</td></tr>)}</tbody></table></div>; }
+function SettingsScreen({ config, setConfig }) { const [userForm,setUserForm]=useState({id:'',nome:'',login:'',senha:'',perfil:'vendedor',ativo:true}); const users=config.usuarios||defaultConfig.usuarios; const saveUser=()=>{ if(!userForm.nome||!userForm.login||!userForm.senha) return alert('Preencha nome, login e senha.'); const payload={...userForm,ativo:userForm.ativo!==false,id:userForm.id||code('U')}; setConfig({...config,usuarios:userForm.id?users.map(u=>u.id===userForm.id?payload:u):[payload,...users]}); setUserForm({id:'',nome:'',login:'',senha:'',perfil:'vendedor',ativo:true}); }; const fields=['nomeFantasia','razaoSocial','cnpj','email','telefone','endereco','cidade','chavePix','mensagemCupom']; return <div className="window-panel full"><header className="panel-title">⚙️ Configurações da Empresa, Pix e Permissões</header><div className="grid-form two padded">{fields.map(f=><label key={f}>{f}<input value={config[f]} onChange={e=>setConfig({...config,[f]:e.target.value})}/></label>)}<label className="wide check-line"><input type="checkbox" checked={!!config.permitirVendedorEstoque} onChange={e=>setConfig({...config,permitirVendedorEstoque:e.target.checked})}/> Permitir vendedor mexer no estoque/produtos</label></div><h3 className="padded-title">Usuários e senhas exclusivas</h3><div className="split"><div className="list-box">{users.map(u=><div key={u.id} onClick={()=>setUserForm(u)}>🔐 {u.nome} - {u.login}<br/><small>{u.perfil} - {u.ativo!==false?'ativo':'inativo'}</small></div>)}</div><div className="grid-form two"><label>NOME<input value={userForm.nome} onChange={e=>setUserForm({...userForm,nome:e.target.value})}/></label><label>LOGIN<input value={userForm.login} onChange={e=>setUserForm({...userForm,login:e.target.value})}/></label><label>SENHA<input value={userForm.senha} onChange={e=>setUserForm({...userForm,senha:e.target.value})}/></label><label>PERFIL<select value={userForm.perfil} onChange={e=>setUserForm({...userForm,perfil:e.target.value})}><option value="vendedor">vendedor</option><option value="financeiro">financeiro</option><option value="administrador">administrador</option></select></label><label className="wide check-line"><input type="checkbox" checked={userForm.ativo!==false} onChange={e=>setUserForm({...userForm,ativo:e.target.checked})}/> Usuário ativo</label><div className="side-actions wide"><button onClick={saveUser}><Save/> Salvar Usuário</button><button onClick={()=>setUserForm({id:'',nome:'',login:'',senha:'',perfil:'vendedor',ativo:true})}><Plus/> Novo</button></div></div></div></div>; }
+function Backup({ config, clients, suppliers, vendors, products, sales, movements, setConfig, setClients, setSuppliers, setVendors, setProducts, setSales, setMovements }) { const fileRef=useRef(null); const exportData=()=>{ const blob=new Blob([JSON.stringify({config,clients,suppliers,vendors,products,sales,movements},null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='backup-pdv-miller-motos.json'; a.click(); }; const importData=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ const data=JSON.parse(reader.result); setConfig(data.config||defaultConfig); setClients(data.clients||defaultClients); setSuppliers(data.suppliers||defaultSuppliers); setVendors(data.vendors||defaultVendors); setProducts(data.products||defaultProducts); setSales(data.sales||[]); setMovements(data.movements||defaultMovements); alert('Backup restaurado.'); }; reader.readAsText(file); }; return <div className="window-panel mid"><header className="panel-title">💾 Backup e Restauração</header><div className="finance-grid"><button onClick={exportData}><Download/> Baixar Backup JSON</button><button onClick={()=>fileRef.current.click()}><Upload/> Restaurar Backup</button><button onClick={()=>{ if(confirm('Restaurar dados de demonstração?')){ setConfig(defaultConfig); setClients(defaultClients); setSuppliers(defaultSuppliers); setVendors(defaultVendors); setProducts(defaultProducts); setSales([]); setMovements(defaultMovements); } }}><Database/> Restaurar Demonstração</button></div><input ref={fileRef} type="file" accept="application/json" hidden onChange={importData}/></div>; }
+function Help(){ return <div className="window-panel mid"><header className="panel-title">🆘 Como usar</header><div className="help"><p><strong>1.</strong> Admin controla tudo e cadastra fornecedores, vendedores, usuários e permissões.</p><p><strong>2.</strong> Vendedor vende no balcão, mas não mexe no estoque se o admin não permitir.</p><p><strong>3.</strong> Toda venda baixa estoque e cria movimento de SAÍDA automaticamente.</p><p><strong>4.</strong> Entrada manual de estoque fica em Estoque &gt; Relação Entrada/Saída.</p><p><strong>5.</strong> Relatórios completos mostram vendas, lucro estimado, vendedor, pagamento, estoque baixo e produtos mais vendidos.</p></div></div>; }
 
 createRoot(document.getElementById('root')).render(<App />);

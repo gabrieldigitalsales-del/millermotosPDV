@@ -1,12 +1,18 @@
-# PDV MILLER MOTOS - Supabase direto
+# PDV MILLER MOTOS - Layout clássico + Supabase direto
 
-Esta versão remove o modo local como padrão. Clientes, produtos, vendas, estoque, fornecedores, vendedores, configurações e relatórios usam o Supabase diretamente.
+Esta versão preserva o layout clássico anterior e usa Supabase direto para sincronizar os dados entre dispositivos.
 
-## Antes de publicar no Vercel
+## Rodar localmente
 
-1. No Supabase, abra SQL Editor.
-2. Cole e execute `supabase/schema_miller_motos.sql`.
-3. No Vercel, configure as variáveis:
+```bash
+npm install
+npm run dev
+```
+
+## Configurar Supabase
+
+1. Execute `supabase/schema_miller_motos.sql` no SQL Editor do Supabase.
+2. Configure `.env.local` no PC ou as variáveis no Vercel:
 
 ```env
 VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
@@ -14,22 +20,22 @@ VITE_SUPABASE_ANON_KEY=SUA_CHAVE_ANON_PUBLIC
 VITE_MM_PROJECT_ID=9f1f4df2-5f5a-4a7d-9f34-8a9be4412026
 ```
 
-4. Faça novo deploy.
+## Login inicial
 
-## Acessos iniciais
+- Admin: `admin` / `admin123`
+- Financeiro: `financeiro` / `fin123`
+- Vendedor: `vendedor` / `venda123`
 
-- admin / admin123
-- financeiro / fin123
-- vendedor / venda123
+## Importante
 
-## Ajustes desta versão
+Os dados comerciais não usam mais `localStorage`. Eles são carregados e salvos no Supabase.
 
-- Salvamento direto no Supabase.
-- Sem localStorage como banco principal.
-- Balcão mostra pré-itens antes de pesquisar.
-- Linha amarela ajustada para: ⭐ Produtos mais vendidos
-- Busca sem acento e em tempo real.
-- Venda baixa estoque e gera movimento de saída.
-- Entrada de estoque manual.
-- Relatórios completos.
-- Controle de permissões por perfil.
+## Correção Vercel - dependências
+
+Esta versão usa versões fixas e compatíveis:
+
+- vite ^5.4.21
+- @vitejs/plugin-react ^4.3.4
+- react ^18.3.1
+
+Se o Vercel continuar usando dependências antigas, apague `package-lock.json` do repositório, faça commit novamente e rode o deploy limpando o cache.
