@@ -186,17 +186,23 @@ function isUuid(value) {
 
 function stripBadId(row) {
   const copy = { ...row };
-  if (!isUuid(copy.id)) delete copy.id;
+  // Nunca envie id vazio/nulo/temporario para o Supabase.
+  // Assim o banco usa o default gen_random_uuid().
+  if (copy.id === null || copy.id === undefined || String(copy.id).trim() === '' || !isUuid(copy.id)) {
+    delete copy.id;
+  }
   return copy;
 }
 
 function produtoToDb(p) {
+  const nome = String(p.nome || p.produto || p.descricao || '').trim() || 'Produto sem nome';
+  const codigo = String(p.codigo || '').trim() || ('PROD-' + Date.now().toString().slice(-6));
   return stripBadId(withProject({
     id: p.id,
-    codigo: p.codigo || '',
-    nome: p.nome || p.codigo || 'Produto sem nome',
-    descricao: p.nome || p.descricao || p.codigo || 'Produto sem nome',
-    produto: p.nome || p.produto || p.codigo || 'Produto sem nome',
+    codigo,
+    nome,
+    descricao: nome,
+    produto: nome,
     categoria: p.categoria || '',
     fornecedor_id: isUuid(p.fornecedorId) ? p.fornecedorId : null,
     custo: toNumber(p.custo),
