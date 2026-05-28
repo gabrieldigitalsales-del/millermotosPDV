@@ -153,3 +153,7 @@ tr.zero { background: #ffd6de; }
   .receipt-paper canvas { display: block !important; margin: 2mm auto !important; }
   @page { size: 80mm auto; margin: 0; }
 }
+
+.actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.toolbar-info { display: inline-flex; align-items: center; padding: 8px 10px; font-weight: 700; color: #26384f; }
+.receipt-canceled { text-align: center; border: 2px solid #000; padding: 6px; margin: 8px 0; font-size: 14px; }
