@@ -1,0 +1,23 @@
+SQL principal para começar do zero:
+
+1) Abra o Supabase > SQL Editor
+2) Cole e execute o arquivo:
+   supabase/sql_reset_completo_miller_motos_final.sql
+
+ATENCAO: este SQL faz reset completo das tabelas mm_pdv_ para comecar do zero.
+Ele apaga dados antigos dessas tabelas e recria tudo correto.
+
+Inclui:
+- clientes
+- produtos
+- fornecedores
+- vendedores
+- usuarios/senhas
+- vendas
+- itens de venda
+- movimento de estoque
+- produtos mais vendidos
+- resumo geral de estoque
+- movimento geral de estoque
+- numero de venda amigavel VD-000001
+- permissoes RLS para Vercel

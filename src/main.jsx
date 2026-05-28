@@ -368,8 +368,83 @@ function Suppliers({ suppliers, setSuppliers }) { const blank={id:'',nome:'',cnp
 function Vendors({ vendors, setVendors }) { const blank={id:'',nome:'',telefone:'',email:'',comissao:0,ativo:true}; const [form,setForm]=useState(blank); const [q,setQ]=useState(''); const list=vendors.filter(v=>!normalizeText(q)||searchableText(v.nome,v.telefone,v.email,v.comissao).includes(normalizeText(q))); const save=()=>{ if(!form.nome.trim()) return alert('Informe o vendedor.'); const payload={...form,comissao:onlyNumber(form.comissao),ativo:form.ativo!==false}; if(form.id) setVendors(vendors.map(v=>v.id===form.id?payload:v)); else setVendors([{...payload,id:code('V')},...vendors]); setForm(blank); }; return <CrudPanel title="👨‍💼 Cadastro de Vendedores" q={q} setQ={setQ} onNew={()=>setForm(blank)} onSave={save}><div className="split"><div className="list-box">{list.map(v=><div key={v.id} onClick={()=>setForm(v)}>👨‍💼 {cleanDisplay(v.nome, 'Vendedor')}<br/><small>Comissão: {v.comissao || 0}% - {v.ativo?'Ativo':'Inativo'}</small></div>)}</div><div className="grid-form two"><label>NOME<input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></label><label>TELEFONE<input value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})}/></label><label>E-MAIL<input value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>COMISSÃO %<input value={form.comissao} onChange={e=>setForm({...form,comissao:e.target.value})}/></label><label className="wide check-line"><input type="checkbox" checked={form.ativo!==false} onChange={e=>setForm({...form,ativo:e.target.checked})}/> Vendedor ativo</label><div className="side-actions wide"><button onClick={save}><Save/> Salvar Vendedor</button><button onClick={()=>form.id&&setVendors(vendors.filter(v=>v.id!==form.id))}><Trash2/> Excluir</button></div></div></div></CrudPanel>; }
 function Products({ products, setProducts, suppliers, currentUser, config, movements, setMovements }) { const blank={id:'',codigo:'',nome:'',categoria:'',fornecedorId:'',custo:0,preco:0,estoque:0,minimo:0,unidade:'UN'}; const [form,setForm]=useState(blank); const [q,setQ]=useState(''); const query=normalizeText(q); const list=products.filter(p=>!query||searchableText(p.codigo,p.nome,p.categoria,p.unidade).includes(query)); const save=()=>{ if(!form.nome.trim()) return alert('Informe o nome do produto.'); const old=products.find(p=>p.id===form.id); const payload={...form,custo:onlyNumber(form.custo),preco:onlyNumber(form.preco),estoque:onlyNumber(form.estoque),minimo:onlyNumber(form.minimo)}; if(form.id) { setProducts(products.map(p=>p.id===form.id?payload:p)); if(old && old.estoque !== payload.estoque){ const delta=payload.estoque-old.estoque; setMovements([{id:code('MOV'),data:todayISO(),tipo:delta>=0?'ENTRADA':'SAÍDA',produtoId:payload.id,produtoNome:payload.nome,qtd:Math.abs(delta),motivo:'Ajuste direto no cadastro de produto',usuario:currentUser.nome},...movements]); } } else { const novo={...payload,id:code('P'),codigo:form.codigo||String(Date.now()).slice(-6)}; setProducts([novo,...products]); if(novo.estoque>0) setMovements([{id:code('MOV'),data:todayISO(),tipo:'ENTRADA',produtoId:novo.id,produtoNome:novo.nome,qtd:novo.estoque,motivo:'Cadastro inicial do produto',usuario:currentUser.nome},...movements]); } setForm(blank); }; return <CrudPanel title="📦 Produtos / Peças / Estoque" q={q} setQ={setQ} onNew={()=>setForm(blank)} onSave={save}><div className="split products-split"><table className="data-table"><thead><tr><th>Código</th><th>Produto</th><th>Preço</th><th>Estoque</th></tr></thead><tbody>{list.map(p=><tr key={p.id} onClick={()=>setForm(p)} className={p.estoque<=p.minimo?'zero':''}><td>{p.codigo}</td><td>{cleanDisplay(p.nome, 'Produto')}</td><td>{money(p.preco)}</td><td>{p.estoque}</td></tr>)}</tbody></table><div className="grid-form two"><label>CÓDIGO<input value={form.codigo} onChange={e=>setForm({...form,codigo:e.target.value})}/></label><label>NOME<input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})}/></label><label>CATEGORIA<input value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})}/></label><label>FORNECEDOR<select value={form.fornecedorId} onChange={e=>setForm({...form,fornecedorId:e.target.value})}><option value="">Sem fornecedor</option>{suppliers.map(s=><option key={s.id} value={s.id}>{cleanDisplay(s.nome, 'Fornecedor')}</option>)}</select></label>{['unidade','custo','preco','estoque','minimo'].map(f=><label key={f}>{f.toUpperCase()}<input value={form[f]} onChange={e=>setForm({...form,[f]:e.target.value})}/></label>)}<div className="side-actions wide"><button onClick={save}><Save/> Salvar Produto</button><button onClick={()=>form.id&&setProducts(products.filter(p=>p.id!==form.id))}><Trash2/> Excluir</button></div></div></div></CrudPanel>; }
 
-function StockMovements({ products, setProducts, movements, setMovements, currentUser, canEdit }) { const [produtoId,setProdutoId]=useState(products[0]?.id||''); const [tipo,setTipo]=useState('ENTRADA'); const [qtd,setQtd]=useState(1); const [motivo,setMotivo]=useState('Compra / reposição'); const [q,setQ]=useState(''); const list=movements.filter(m=>!normalizeText(q)||searchableText(m.tipo,m.produtoNome,m.motivo,m.usuario,m.vendaId).includes(normalizeText(q))); function registrar(){ if(!canEdit) return alert('Acesso negado para movimentar estoque.'); const prod=products.find(p=>p.id===produtoId); const amount=onlyNumber(qtd); if(!prod||amount<=0) return alert('Informe produto e quantidade.'); if(tipo==='SAÍDA'&&prod.estoque<amount) return alert('Estoque insuficiente.'); setProducts(products.map(p=>p.id===produtoId?{...p,estoque: tipo==='ENTRADA'?p.estoque+amount:p.estoque-amount}:p)); setMovements([{id:code('MOV'),data:todayISO(),tipo,produtoId,produtoNome:prod.nome,qtd:amount,motivo,usuario:currentUser.nome},...movements]); setQtd(1); }
-  return <div className="window-panel full"><header className="panel-title">🔁 Relação de Entrada e Saída do Estoque</header><div className="crud-toolbar"><label>Pesquisar movimentação<input value={q} onChange={e=>setQ(e.target.value)}/></label><button onClick={()=>window.print()}><Printer/> Imprimir Relação</button></div><div className="grid-form movement-form padded"><label>Produto<select value={produtoId} onChange={e=>setProdutoId(e.target.value)}>{products.map(p=><option key={p.id} value={p.id}>{p.codigo} - {cleanDisplay(p.nome, 'Produto')} | Est: {p.estoque}</option>)}</select></label><label>Tipo<select value={tipo} onChange={e=>setTipo(e.target.value)}><option>ENTRADA</option><option>SAÍDA</option></select></label><label>Quantidade<input value={qtd} onChange={e=>setQtd(e.target.value)}/></label><label>Motivo<input value={motivo} onChange={e=>setMotivo(e.target.value)}/></label><button onClick={registrar}><Save/> Registrar Movimento</button></div><table className="data-table"><thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Motivo</th><th>Usuário</th></tr></thead><tbody>{list.map(m=><tr key={m.id} className={m.tipo==='SAÍDA'?'zero':''}><td>{new Date(m.data).toLocaleString('pt-BR')}</td><td>{m.tipo}</td><td>{m.produtoNome}</td><td>{m.qtd}</td><td>{m.motivo}</td><td>{m.usuario}</td></tr>)}</tbody></table></div>; }
+function StockMovements({ products, setProducts, movements, setMovements, currentUser, canEdit }) {
+  const [produtoId,setProdutoId]=useState(products[0]?.id||'');
+  const [tipo,setTipo]=useState('ENTRADA');
+  const [qtd,setQtd]=useState(1);
+  const [motivo,setMotivo]=useState('Compra / reposição');
+  const [q,setQ]=useState('');
+  const [visao,setVisao]=useState('todos');
+
+  const selectedProduct = products.find(p=>p.id===produtoId);
+  const normalizedQuery = normalizeText(q);
+  const filteredMovements = movements.filter(m=>{
+    const movimentoTipo = String(m.tipo || '').toUpperCase();
+    const matchQuery = !normalizedQuery || searchableText(m.tipo,m.produtoNome,m.motivo,m.usuario,m.vendaId).includes(normalizedQuery);
+    const matchView =
+      visao === 'todos' ||
+      (visao === 'produto' && m.produtoId === produtoId) ||
+      (visao === 'entradas' && movimentoTipo.includes('ENTRADA')) ||
+      (visao === 'saidas' && (movimentoTipo.includes('SAÍDA') || movimentoTipo.includes('SAIDA')));
+    return matchQuery && matchView;
+  });
+
+  const stockSummary = products.map(p=>{
+    const movs = movements.filter(m=>m.produtoId===p.id);
+    const entradas = movs.filter(m=>String(m.tipo||'').toUpperCase().includes('ENTRADA')).reduce((a,m)=>a+onlyNumber(m.qtd),0);
+    const saidas = movs.filter(m=>String(m.tipo||'').toUpperCase().includes('SAÍDA') || String(m.tipo||'').toUpperCase().includes('SAIDA')).reduce((a,m)=>a+onlyNumber(m.qtd),0);
+    const ajustes = movs.filter(m=>String(m.tipo||'').toUpperCase().includes('AJUSTE')).reduce((a,m)=>a+onlyNumber(m.qtd),0);
+    return {...p, entradas, saidas, ajustes, valorCusto:(p.custo||0)*(p.estoque||0), valorVenda:(p.preco||0)*(p.estoque||0), status:(p.estoque<=0?'ZERADO':p.estoque<=p.minimo?'BAIXO':'OK')};
+  });
+
+  const summaryFiltered = stockSummary.filter(p=>{
+    const matchQuery = !normalizedQuery || searchableText(p.codigo,p.nome,p.categoria,p.status).includes(normalizedQuery);
+    const matchView =
+      visao === 'todos' ||
+      (visao === 'produto' && p.id === produtoId) ||
+      (visao === 'baixo' && p.status === 'BAIXO') ||
+      (visao === 'zerado' && p.status === 'ZERADO');
+    return matchQuery && matchView;
+  });
+
+  const totais = summaryFiltered.reduce((acc,p)=>({
+    estoque: acc.estoque + onlyNumber(p.estoque),
+    entradas: acc.entradas + onlyNumber(p.entradas),
+    saidas: acc.saidas + onlyNumber(p.saidas),
+    valorCusto: acc.valorCusto + onlyNumber(p.valorCusto),
+    valorVenda: acc.valorVenda + onlyNumber(p.valorVenda),
+  }), {estoque:0, entradas:0, saidas:0, valorCusto:0, valorVenda:0});
+
+  function registrar(){
+    if(!canEdit) return alert('Acesso negado para movimentar estoque.');
+    const prod=products.find(p=>p.id===produtoId);
+    const amount=onlyNumber(qtd);
+    if(!prod||amount<=0) return alert('Informe produto e quantidade.');
+    if(tipo==='SAÍDA'&&prod.estoque<amount) return alert('Estoque insuficiente.');
+    const estoqueDepois = tipo==='ENTRADA'?prod.estoque+amount:prod.estoque-amount;
+    setProducts(products.map(p=>p.id===produtoId?{...p,estoque: estoqueDepois}:p));
+    setMovements([{id:code('MOV'),data:todayISO(),tipo,produtoId,produtoNome:prod.nome,qtd:amount,motivo,usuario:currentUser.nome, estoqueAntes: prod.estoque, estoqueDepois},...movements]);
+    setQtd(1);
+  }
+
+  return <div className="window-panel full"><header className="panel-title">🔁 Relação de Entrada e Saída do Estoque</header>
+    <div className="crud-toolbar">
+      <label>Visualizar<select value={visao} onChange={e=>setVisao(e.target.value)}><option value="todos">Todos os produtos</option><option value="produto">Somente este produto</option><option value="baixo">Estoque baixo</option><option value="zerado">Estoque zerado</option><option value="entradas">Entradas</option><option value="saidas">Saídas</option></select></label>
+      <label>Pesquisar<input value={q} onChange={e=>setQ(e.target.value)} placeholder="Produto, código, usuário, venda..."/></label>
+      <button onClick={()=>window.print()}><Printer/> Imprimir Relação</button>
+    </div>
+
+    <div className="kpi-grid stock-kpis"><Kpi label="Produtos listados" value={summaryFiltered.length}/><Kpi label="Qtd total estoque" value={totais.estoque}/><Kpi label="Total entradas" value={totais.entradas}/><Kpi label="Total saídas" value={totais.saidas}/><Kpi label="Valor custo estoque" value={money(totais.valorCusto)}/><Kpi label="Valor venda estoque" value={money(totais.valorVenda)}/></div>
+
+    <div className="grid-form movement-form padded"><label>Produto para movimentar<select value={produtoId} onChange={e=>setProdutoId(e.target.value)}>{products.map(p=><option key={p.id} value={p.id}>{p.codigo} - {cleanDisplay(p.nome, 'Produto')} | Est: {p.estoque}</option>)}</select></label><label>Tipo<select value={tipo} onChange={e=>setTipo(e.target.value)}><option>ENTRADA</option><option>SAÍDA</option></select></label><label>Quantidade<input value={qtd} onChange={e=>setQtd(e.target.value)}/></label><label>Motivo<input value={motivo} onChange={e=>setMotivo(e.target.value)}/></label><button onClick={registrar}><Save/> Registrar Movimento</button></div>
+
+    <h3 className="padded-title">Resumo geral do estoque {visao==='produto' && selectedProduct ? `- ${cleanDisplay(selectedProduct.nome, 'Produto')}` : ''}</h3>
+    <table className="data-table"><thead><tr><th>Código</th><th>Produto</th><th>Estoque</th><th>Entradas</th><th>Saídas</th><th>Mín.</th><th>Status</th><th>Valor Venda</th></tr></thead><tbody>{summaryFiltered.map(p=><tr key={p.id} className={p.status!=='OK'?'zero':''}><td>{p.codigo}</td><td>{cleanDisplay(p.nome, 'Produto')}</td><td>{p.estoque}</td><td>{p.entradas}</td><td>{p.saidas}</td><td>{p.minimo}</td><td>{p.status}</td><td>{money(p.valorVenda)}</td></tr>)}{!summaryFiltered.length&&<tr><td colSpan="8" className="empty">Nenhum produto encontrado.</td></tr>}</tbody></table>
+
+    <h3 className="padded-title">Movimentação detalhada</h3>
+    <table className="data-table"><thead><tr><th>Data</th><th>Tipo</th><th>Produto</th><th>Qtd</th><th>Motivo</th><th>Venda</th><th>Usuário</th></tr></thead><tbody>{filteredMovements.map(m=><tr key={m.id} className={String(m.tipo).includes('SAÍ')?'zero':''}><td>{new Date(m.data).toLocaleString('pt-BR')}</td><td>{m.tipo}</td><td>{cleanDisplay(m.produtoNome, 'Produto')}</td><td>{m.qtd}</td><td>{m.motivo}</td><td>{looksUuid(m.vendaId)?'':m.vendaId}</td><td>{cleanDisplay(m.usuario, 'Usuário')}</td></tr>)}{!filteredMovements.length&&<tr><td colSpan="7" className="empty">Nenhuma movimentação encontrada.</td></tr>}</tbody></table>
+  </div>;
+}
 
 function SalesHistory({ sales, config }) { const [selected,setSelected]=useState(null); return <div className="window-panel full"><header className="panel-title">🧾 Histórico de Vendas</header><table className="data-table"><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Vendedor</th><th>Pagamento</th><th>Total</th><th>Ação</th></tr></thead><tbody>{sales.map(s=><tr key={s.id}><td>{saleNumber(s)}</td><td>{new Date(s.data).toLocaleString('pt-BR')}</td><td>{s.cliente}</td><td>{s.vendedor}</td><td>{s.pagamento}</td><td>{money(s.total)}</td><td><button onClick={()=>{setSelected(s);setTimeout(()=>window.print(),100);}}>Imprimir</button></td></tr>)}</tbody></table><div className="print-receipt">{selected&&<ReceiptPrint sale={selected} config={config}/>}</div></div>; }
 function Pix({ config, setConfig, canEdit }) { const [valor,setValor]=useState('0'); const text=`PIX ${config.nomeFantasia}\nChave: ${config.chavePix}\nValor: ${money(onlyNumber(valor))}`; return <div className="window-panel mid"><header className="panel-title">💳 Pix / QR Code</header><div className="pix-screen"><div className="qr-box big"><QRCodeCanvas value={text} size={240}/></div><div className="grid-form two"><label>Valor<input value={valor} onChange={e=>setValor(e.target.value)}/></label><label>Chave Pix<input value={config.chavePix} disabled={!canEdit} onChange={e=>setConfig({...config,chavePix:e.target.value})}/></label><p className="wide">Esse QR Code muda quando você altera a chave Pix ou o valor. Alterar chave Pix exige administrador.</p></div></div></div>; }
