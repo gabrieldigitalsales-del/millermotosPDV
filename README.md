@@ -1,76 +1,35 @@
-# PDV MILLER MOTOS - Versao preparada para Supabase
+# PDV MILLER MOTOS - Supabase direto
 
-Sistema PDV para venda de pecas de moto com layout classico:
+Esta versão remove o modo local como padrão. Clientes, produtos, vendas, estoque, fornecedores, vendedores, configurações e relatórios usam o Supabase diretamente.
 
-- Cadastro de clientes
-- Cadastro de produtos e estoque
-- Cadastro de fornecedores
-- Cadastro de vendedores
-- Venda de balcao
-- Cupom nao fiscal imprimivel
-- Pix / QR Code
-- Permissoes por perfil
-- Relatorios
-- Backup e restauracao
-- Preparacao Supabase com SQL exclusivo
+## Antes de publicar no Vercel
 
-## Rodar local
+1. No Supabase, abra SQL Editor.
+2. Cole e execute `supabase/schema_miller_motos.sql`.
+3. No Vercel, configure as variáveis:
 
-```bash
-npm install
-npm run dev
-```
-
-## Preparar Supabase
-
-1. Crie um projeto no Supabase.
-2. Abra o SQL Editor.
-3. Execute o arquivo:
-
-```text
-supabase/schema_miller_motos.sql
-```
-
-4. Copie `.env.example` para `.env.local`.
-5. Preencha:
-
-```bash
+```env
 VITE_SUPABASE_URL=https://SEU-PROJETO.supabase.co
-VITE_SUPABASE_ANON_KEY=SUA_CHAVE_ANON_PUBLICA
-VITE_MILLER_PROJECT_ID=9f1f4df2-5f5a-4a7d-9f34-8a9be4412026
+VITE_SUPABASE_ANON_KEY=SUA_CHAVE_ANON_PUBLIC
+VITE_MM_PROJECT_ID=9f1f4df2-5f5a-4a7d-9f34-8a9be4412026
 ```
 
-## Isolamento para nao misturar com outros projetos
+4. Faça novo deploy.
 
-Este projeto usa:
+## Acessos iniciais
 
-- Prefixo exclusivo nas tabelas: `mm_pdv_`
-- Coluna obrigatoria `project_id`
-- ID exclusivo: `9f1f4df2-5f5a-4a7d-9f34-8a9be4412026`
-- Chaves primarias compostas com `project_id`
-- RLS ativado com politicas limitadas ao `project_id`
+- admin / admin123
+- financeiro / fin123
+- vendedor / venda123
 
-Assim, mesmo usando o mesmo banco para outros projetos, os dados da MILLER MOTOS ficam separados.
+## Ajustes desta versão
 
-## Arquivos Supabase incluidos
-
-- `supabase/schema_miller_motos.sql`: cria tabelas, indices, views, politicas e dados iniciais.
-- `src/lib/supabaseClient.js`: cria a conexao com Supabase.
-- `src/lib/supabaseRepository.js`: funcoes prontas para listar, salvar, excluir e finalizar venda no banco.
-- `.env.example`: modelo de configuracao.
-
-## Observacao importante
-
-A interface atual continua funcionando localmente. O pacote ja esta preparado para Supabase com estrutura, dependencias e repositorio. Para colocar 100% online, substitua os pontos de `useLocalStorage` pelas funcoes de `src/lib/supabaseRepository.js` tela por tela.
-
-## Atualizacao: pre-itens no balcao
-
-No PDV, quando o campo de pesquisa estiver vazio, o sistema mostra automaticamente os produtos com maior saida, funcionando como atalhos rapidos de balcão.
-
-A prioridade e calculada assim:
-
-1. produtos mais vendidos / com mais saidas;
-2. produtos com estoque disponivel;
-3. ordem alfabetica.
-
-A busca continua inteligente: `O`, `Ol`, `oleo` e `Óleo` encontram o mesmo produto.
+- Salvamento direto no Supabase.
+- Sem localStorage como banco principal.
+- Balcão mostra pré-itens antes de pesquisar.
+- Linha amarela ajustada para: ⭐ Produtos mais vendidos
+- Busca sem acento e em tempo real.
+- Venda baixa estoque e gera movimento de saída.
+- Entrada de estoque manual.
+- Relatórios completos.
+- Controle de permissões por perfil.
