@@ -94,3 +94,13 @@ tr.zero { background: #ffd6de; }
 .report-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 16px; }
 .padded-title { padding: 0 16px; margin-top: 18px; }
 @media (max-width: 900px) { .movement-form, .report-grid { grid-template-columns: 1fr; } }
+.quick-products-title { margin: 10px 12px 0; padding: 8px 10px; border: 1px solid #aaa; border-bottom: 0; background: linear-gradient(#fff7d6, #eee2a7); font-weight: 700; color: #3b3b20; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.quick-products-title small { font-weight: 400; color: #555; }
+.search-results.quick-products { margin-top: 0; }
+.search-results.quick-products button { grid-template-columns: 120px 1fr 100px 70px 80px; }
+.search-results.quick-products .disabled-product { opacity: .55; background: #f2f2f2; }
+.empty-result { padding: 16px; color: #777; text-align: center; }
+@media (max-width: 760px) {
+  .quick-products-title { flex-direction: column; align-items: flex-start; }
+  .search-results.quick-products button { grid-template-columns: 1fr 1fr; }
+}

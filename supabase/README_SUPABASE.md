@@ -31,3 +31,10 @@ npm run dev
 
 A versao atual do app ainda mantem fallback localStorage para funcionar offline/local.
 Os arquivos `src/lib/supabaseClient.js` e `src/lib/supabaseRepository.js` ja deixam o projeto preparado para trocar o armazenamento local pelo Supabase tela por tela.
+
+## Atualizacao: produtos prioritarios no balcao
+
+Esta versao adiciona a view `mm_pdv_produtos_prioridade_balcao`.
+Ela ordena automaticamente os produtos pelo que mais saiu nas vendas, depois por estoque e nome.
+No PDV, quando o campo de pesquisa estiver vazio, o balcao mostra estes produtos como atalhos rapidos.
+Quando o vendedor digita `O`, `Ol`, `oleo` ou `Óleo`, a busca continua filtrando com ou sem acento.

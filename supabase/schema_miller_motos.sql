@@ -327,3 +327,26 @@ group by i.project_id, i.produto_id, i.codigo, i.nome
 order by qtd_vendida desc;
 
 -- FIM
+
+-- Atalhos do balcao: produtos com maior saida aparecem primeiro quando nao existe pesquisa.
+create or replace view public.mm_pdv_produtos_prioridade_balcao as
+select
+  p.project_id,
+  p.id,
+  p.codigo,
+  p.nome,
+  p.categoria,
+  p.fornecedor_id,
+  p.custo,
+  p.preco,
+  p.estoque,
+  p.minimo,
+  p.unidade,
+  coalesce(v.qtd_vendida, 0) as qtd_vendida,
+  coalesce(v.total_vendido, 0) as total_vendido
+from public.mm_pdv_produtos p
+left join public.mm_pdv_relatorio_produtos_mais_vendidos v
+  on v.project_id = p.project_id
+ and v.produto_id = p.id
+where p.project_id = '9f1f4df2-5f5a-4a7d-9f34-8a9be4412026'
+order by coalesce(v.qtd_vendida, 0) desc, p.estoque desc, p.nome asc;

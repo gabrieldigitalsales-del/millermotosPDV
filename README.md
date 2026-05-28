@@ -62,3 +62,15 @@ Assim, mesmo usando o mesmo banco para outros projetos, os dados da MILLER MOTOS
 ## Observacao importante
 
 A interface atual continua funcionando localmente. O pacote ja esta preparado para Supabase com estrutura, dependencias e repositorio. Para colocar 100% online, substitua os pontos de `useLocalStorage` pelas funcoes de `src/lib/supabaseRepository.js` tela por tela.
+
+## Atualizacao: pre-itens no balcao
+
+No PDV, quando o campo de pesquisa estiver vazio, o sistema mostra automaticamente os produtos com maior saida, funcionando como atalhos rapidos de balcão.
+
+A prioridade e calculada assim:
+
+1. produtos mais vendidos / com mais saidas;
+2. produtos com estoque disponivel;
+3. ordem alfabetica.
+
+A busca continua inteligente: `O`, `Ol`, `oleo` e `Óleo` encontram o mesmo produto.

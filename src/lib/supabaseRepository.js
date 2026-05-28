@@ -55,6 +55,16 @@ export async function buscarProdutos(termo = '') {
   return data || [];
 }
 
+
+export async function listarProdutosPrioridadeBalcao(limite = 18) {
+  const db = requireSupabase();
+  const { data, error } = await projectFilter(
+    db.from('mm_pdv_produtos_prioridade_balcao').select('*')
+  ).limit(limite);
+  if (error) throw error;
+  return data || [];
+}
+
 export async function finalizarVendaSupabase({ venda, itens, movimentos, produtosAtualizados }) {
   const db = requireSupabase();
   const { data: vendaSalva, error: vendaError } = await db.from(tables.vendas).insert(withProject(venda)).select().single();
