@@ -84,3 +84,13 @@ tr.zero { background: #ffd6de; }
   .receipt-paper { width: 280px; box-shadow: none; }
   @page { size: 80mm auto; margin: 4mm; }
 }
+.login-shell { min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at center, #38424d, #111); }
+.login-box { width: min(440px, 92vw); }
+.grid-form.one { grid-template-columns: 1fr; }
+.status-logout { border: 1px solid #999; background: #fff; padding: 2px 10px; cursor: pointer; }
+.check-line { flex-direction: row; align-items: center; gap: 8px; }
+.check-line input { min-height: auto; width: auto; }
+.movement-form { grid-template-columns: 2fr 1fr 1fr 2fr auto; align-items: end; }
+.report-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 16px; }
+.padded-title { padding: 0 16px; margin-top: 18px; }
+@media (max-width: 900px) { .movement-form, .report-grid { grid-template-columns: 1fr; } }
