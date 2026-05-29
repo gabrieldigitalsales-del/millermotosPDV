@@ -322,7 +322,45 @@ function Login({ config, onLogin }) {
     alert('Usuário ou senha incorretos. Use admin/admin123, financeiro/fin123 ou vendedor/venda123.');
   }
 
-  return <div className="app-shell login-shell"><div className="login-box window-panel"><header className="panel-title">🔐 Entrar no PDV {config.nomeFantasia}</header><form onSubmit={submit} className="grid-form one padded"><label>Usuário<input value={login} onChange={e=>setLogin(e.target.value)} autoFocus /></label><label>Senha<input type="password" value={senha} onChange={e=>setSenha(e.target.value)} /></label><button className="big green"><Lock/> Entrar</button><p><strong>Acessos garantidos:</strong><br/>admin / admin123<br/>financeiro / fin123<br/>vendedor / venda123</p></form></div></div>;
+  return (
+    <div className="app-shell login-shell">
+      <div className="login-box window-panel">
+        <header className="panel-title">🔐 Entrar no PDV {config.nomeFantasia}</header>
+
+        <form onSubmit={submit} className="grid-form one padded">
+          <label>
+            Usuário
+            <input
+              value={login}
+              onChange={e => setLogin(e.target.value)}
+              autoFocus
+              placeholder="Digite seu usuário"
+            />
+          </label>
+
+          <label>
+            Senha
+            <input
+              type="password"
+              value={senha}
+              onChange={e => setSenha(e.target.value)}
+              placeholder="Digite sua senha"
+            />
+          </label>
+
+          <button className="big green">
+            <Lock /> Entrar
+          </button>
+
+          <div className="login-welcome">
+            <strong>Bem-vindo ao sistema {config.nomeFantasia}</strong>
+            <br />
+            Acesse com seu usuário e senha para iniciar as vendas, consultar produtos e gerenciar o atendimento.
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function PDV({ config, clients, products, setProducts, sales, setSales, vendors, movements, setMovements, currentUser }) {
