@@ -99,3 +99,8 @@ Exemplo de telefone válido: `+5531999999999`.
 - Adicionada fila de salvamento no app para impedir gravações simultâneas no Supabase.
 - Alterado salvamento de vendas para atualizar por `project_id + numero`, sem apagar e recriar todas as vendas a cada alteração.
 - Criado SQL `supabase/correcao_deadlock_vendas.sql` para remover trigger antigo de baixa de estoque e garantir índice único da venda.
+
+## v7 - Reset completo do Supabase
+
+Incluído reset completo do banco em `supabase/sql_reset_completo_miller_motos_final.sql`.
+Esse SQL apaga e recria as tabelas `mm_pdv_*` com todos os defaults de UUID, permissões, constraints únicas usadas pelo app e sem trigger de baixa automática de estoque para evitar deadlock/baixa duplicada.
