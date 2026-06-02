@@ -212,6 +212,24 @@ function App() {
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const persistEnabledRef = useRef(false);
+  const saveQueueRef = useRef(Promise.resolve());
+  const lastSaveErrorRef = useRef('');
+
+  function enqueueSupabaseSave(resource, value) {
+    const task = saveQueueRef.current
+      .catch(() => {})
+      .then(() => saveResource(resource, value));
+    saveQueueRef.current = task;
+    task.catch((error) => {
+      console.error(error);
+      const msg = error.message || String(error);
+      if (lastSaveErrorRef.current !== msg) {
+        lastSaveErrorRef.current = msg;
+        alert('Erro ao salvar no Supabase: ' + msg);
+        setTimeout(() => { lastSaveErrorRef.current = ''; }, 3000);
+      }
+    });
+  }
 
   useEffect(() => {
     let active = true;
@@ -257,10 +275,7 @@ function App() {
       rawSetter((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
         if (persistEnabledRef.current) {
-          saveResource(resource, next).catch((error) => {
-            console.error(error);
-            alert('Erro ao salvar no Supabase: ' + (error.message || error));
-          });
+          enqueueSupabaseSave(resource, next);
         }
         return next;
       });

@@ -12,6 +12,24 @@ const tables = {
   movimentos: 'mm_pdv_movimento_estoque',
 };
 
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const isDeadlockError = (error) => String(error?.code || '').toUpperCase() === '40P01' || String(error?.message || error || '').toLowerCase().includes('deadlock');
+
+async function withDeadlockRetry(operation, attempts = 4) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isDeadlockError(error) || i === attempts - 1) throw error;
+      await sleep(250 * Math.pow(2, i));
+    }
+  }
+  throw lastError;
+}
+
 const DEFAULT_USERS = [
   { id: 'U001', nome: 'Administrador', login: 'admin', senha: 'admin123', perfil: 'administrador', ativo: true },
   { id: 'U002', nome: 'Financeiro', login: 'financeiro', senha: 'fin123', perfil: 'financeiro', ativo: true },
@@ -415,21 +433,26 @@ async function replaceConfig(config) {
 
 async function replaceSales(sales) {
   const db = requireSupabase();
-  const { error: delItens } = await projectFilter(db.from(tables.vendaItens).delete());
-  if (delItens) throw delItens;
-  const { error: delVendas } = await projectFilter(db.from(tables.vendas).delete());
-  if (delVendas) throw delVendas;
   if (!sales?.length) return [];
 
+  // Antes o app apagava TODAS as vendas/itens e recriava tudo a cada alteração.
+  // Isso aumenta muito a chance de deadlock no Postgres/Supabase, principalmente
+  // enquanto produtos e movimentos também estão sendo salvos. Agora cada venda é
+  // gravada por numero dentro do projeto, e apenas os itens daquela venda são
+  // regravados.
   for (const sale of sales) {
-    const { data: insertedSale, error: vendaError } = await db
+    const payload = vendaToDb(sale);
+    const { data: savedSale, error: vendaError } = await db
       .from(tables.vendas)
-      .insert(vendaToDb(sale))
+      .upsert(payload, { onConflict: 'project_id,numero' })
       .select('id, numero')
       .single();
     if (vendaError) throw vendaError;
 
-    const dbSale = { ...sale, __dbId: insertedSale.id };
+    const { error: delItens } = await projectFilter(db.from(tables.vendaItens).delete()).eq('venda_id', savedSale.id);
+    if (delItens) throw delItens;
+
+    const dbSale = { ...sale, __dbId: savedSale.id };
     const items = (sale.items || []).map((item) => itemToDb(dbSale, item));
     if (items.length) {
       const { error: itensError } = await db.from(tables.vendaItens).insert(items);
@@ -441,20 +464,22 @@ async function replaceSales(sales) {
 
 export async function saveResource(resource, value) {
   if (!isSupabaseConfigured) throw new Error('Supabase nao configurado.');
-  if (resource === 'config') return replaceConfig(value);
-  if (resource === 'products') return replaceProdutos(value);
-  if (resource === 'movements') return replaceMovimentos(value);
-  if (resource === 'sales') return replaceSales(value);
-  if (resource === 'clients') return replaceRows(tables.clientes, value.map((c) => stripBadId(withProject({
-    id: c.id, nome: c.nome || 'Cliente', cpf_cnpj: c.documento || '', telefone: c.telefone || '', email: c.email || '', endereco: c.endereco || '', cidade: c.cidade || '', observacoes: c.obs || '', ativo: true
-  }))));
-  if (resource === 'suppliers') return replaceRows(tables.fornecedores, value.map((s) => stripBadId(withProject({
-    id: s.id, nome: s.nome || 'Fornecedor', cnpj: s.cnpj || '', telefone: s.telefone || '', email: s.email || '', cidade: s.cidade || '', observacoes: s.obs || '', ativo: true
-  }))));
-  if (resource === 'vendors') return replaceRows(tables.vendedores, value.map((v) => stripBadId(withProject({
-    id: v.id, nome: v.nome || 'Vendedor', telefone: v.telefone || '', email: v.email || '', comissao: toNumber(v.comissao), ativo: v.ativo !== false
-  }))));
-  return null;
+  return withDeadlockRetry(async () => {
+    if (resource === 'config') return replaceConfig(value);
+    if (resource === 'products') return replaceProdutos(value);
+    if (resource === 'movements') return replaceMovimentos(value);
+    if (resource === 'sales') return replaceSales(value);
+    if (resource === 'clients') return replaceRows(tables.clientes, value.map((c) => stripBadId(withProject({
+      id: c.id, nome: c.nome || 'Cliente', cpf_cnpj: c.documento || '', telefone: c.telefone || '', email: c.email || '', endereco: c.endereco || '', cidade: c.cidade || '', observacoes: c.obs || '', ativo: true
+    }))));
+    if (resource === 'suppliers') return replaceRows(tables.fornecedores, value.map((s) => stripBadId(withProject({
+      id: s.id, nome: s.nome || 'Fornecedor', cnpj: s.cnpj || '', telefone: s.telefone || '', email: s.email || '', cidade: s.cidade || '', observacoes: s.obs || '', ativo: true
+    }))));
+    if (resource === 'vendors') return replaceRows(tables.vendedores, value.map((v) => stripBadId(withProject({
+      id: v.id, nome: v.nome || 'Vendedor', telefone: v.telefone || '', email: v.email || '', comissao: toNumber(v.comissao), ativo: v.ativo !== false
+    }))));
+    return null;
+  });
 }
 
 export async function loadAllSupabase(defaults) {
