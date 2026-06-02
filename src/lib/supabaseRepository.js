@@ -63,13 +63,26 @@ function usuarioFromDb(row) {
   const login = String(pick(row, ['login', 'usuario', 'username', 'email'], '') || '').trim();
   const perfil = String(pick(row, ['perfil', 'tipo', 'role'], 'vendedor')).toLowerCase();
   const nome = looksUuid(rawNome) ? (login || perfil || 'Usuário') : stripUuidPrefix(rawNome, login || perfil || 'Usuário');
+  const perfilFinal = ['administrador', 'financeiro', 'vendedor'].includes(perfil) ? perfil : 'vendedor';
   return {
     id: cleanId(pick(row, ['id'], `U${Date.now()}`), 'U'),
     nome,
     login: login || String(nome).toLowerCase().replace(/\s+/g, ''),
     senha: String(pick(row, ['senha', 'password', 'pass'], '123456')),
-    perfil: ['administrador', 'financeiro', 'vendedor'].includes(perfil) ? perfil : 'vendedor',
+    perfil: perfilFinal,
     ativo: row?.ativo !== false,
+    podeVender: Boolean(row?.pode_vender ?? ['administrador', 'financeiro', 'vendedor'].includes(perfilFinal)),
+    podeClientes: Boolean(row?.pode_clientes ?? ['administrador', 'financeiro', 'vendedor'].includes(perfilFinal)),
+    podeEstoque: Boolean(row?.pode_estoque ?? perfilFinal === 'administrador'),
+    podeProdutos: Boolean(row?.pode_produtos ?? perfilFinal === 'administrador'),
+    podeFinanceiro: Boolean(row?.pode_financeiro ?? ['administrador', 'financeiro'].includes(perfilFinal)),
+    podeConfiguracoes: Boolean(row?.pode_configuracoes ?? perfilFinal === 'administrador'),
+    podeBackup: Boolean(row?.pode_backup ?? perfilFinal === 'administrador'),
+    podeRelatorios: Boolean(row?.pode_relatorios ?? ['administrador', 'financeiro'].includes(perfilFinal)),
+    podeFornecedores: Boolean(row?.pode_fornecedores ?? perfilFinal === 'administrador'),
+    podeVendedores: Boolean(row?.pode_vendedores ?? perfilFinal === 'administrador'),
+    podeHistoricoVendas: Boolean(row?.pode_historico_vendas ?? ['administrador', 'financeiro'].includes(perfilFinal)),
+    podePix: Boolean(row?.pode_pix ?? ['administrador', 'financeiro'].includes(perfilFinal)),
   };
 }
 
@@ -247,8 +260,17 @@ function movimentoToDb(m) {
   }));
 }
 
+function parseSaleMeta(row) {
+  try {
+    const obs = String(row?.observacoes || '').trim();
+    if (obs.startsWith('{')) return JSON.parse(obs);
+  } catch {}
+  return {};
+}
+
 function vendaFromDb(row, itens = []) {
   const numero = String(pick(row, ['numero', 'codigo_venda', 'n_venda'], '') || '').trim();
+  const meta = parseSaleMeta(row);
   return {
     id: cleanId(row.id, 'VD'), // id tecnico interno; nunca exibir ao usuario
     numero: numero && !looksUuid(numero) ? numero : '',
@@ -262,7 +284,11 @@ function vendaFromDb(row, itens = []) {
     desconto: toNumber(row.desconto),
     total: toNumber(row.total),
     pagamento: row.forma_pagamento || row.pagamento || 'Dinheiro',
+    pagamentos: Array.isArray(meta.pagamentos) ? meta.pagamentos : [],
     status: row.status || 'FINALIZADA',
+    cancelada: String(row.status || '').toUpperCase().includes('CANCEL'),
+    canceladaEm: meta.canceladaEm || '',
+    canceladaPor: meta.canceladaPor || '',
     items: itens.map((i) => ({
       id: i.produto_id || i.id,
       itemId: i.id,
@@ -290,7 +316,8 @@ function vendaToDb(sale) {
     desconto: toNumber(sale.desconto),
     total: toNumber(sale.total),
     forma_pagamento: sale.pagamento || 'Dinheiro',
-    status: sale.status || 'FINALIZADA',
+    status: sale.status || (sale.cancelada ? 'CANCELADA' : 'FINALIZADA'),
+    observacoes: JSON.stringify({ pagamentos: sale.pagamentos || [], canceladaEm: sale.canceladaEm || '', canceladaPor: sale.canceladaPor || '' }),
     updated_at: new Date().toISOString(),
   }));
 }
@@ -351,23 +378,36 @@ async function replaceConfig(config) {
   const { error: configError } = await db.from(tables.config).upsert(cfgToDb(config), { onConflict: 'project_id' });
   if (configError) throw configError;
   const users = mergeDefaultUsers(config.usuarios || []);
-  const { error: delUsersError } = await projectFilter(db.from(tables.usuarios).delete());
-  if (delUsersError) throw delUsersError;
   if (users.length) {
-    const { error: usersError } = await db.from(tables.usuarios).insert(users.map((u) => stripBadId(withProject({
-      id: u.id,
-      nome: u.nome,
-      login: u.login,
-      senha: u.senha,
-      perfil: u.perfil,
-      ativo: u.ativo !== false,
-      pode_vender: u.perfil !== 'financeiro',
-      pode_estoque: u.perfil === 'administrador',
-      pode_financeiro: u.perfil === 'administrador' || u.perfil === 'financeiro',
-      pode_configuracoes: u.perfil === 'administrador',
-      pode_relatorios: u.perfil === 'administrador' || u.perfil === 'financeiro',
-      updated_at: new Date().toISOString(),
-    }))));
+    // IMPORTANTE: não reenviar o id antigo dos usuários.
+    // Em alguns bancos o id já existe em outra gravação e causa:
+    // duplicate key value violates unique constraint "mm_pdv_usuarios_pkey".
+    // O upsert por project_id + login atualiza o usuário existente ou cria um novo UUID automaticamente.
+    const userRows = users.map((u) => {
+      const row = stripBadId(withProject({
+        nome: u.nome,
+        login: u.login,
+        senha: u.senha,
+        perfil: u.perfil,
+        ativo: u.ativo !== false,
+        pode_vender: u.podeVender ?? u.perfil !== 'financeiro',
+        pode_clientes: u.podeClientes ?? true,
+        pode_estoque: u.podeEstoque ?? u.perfil === 'administrador',
+        pode_produtos: u.podeProdutos ?? u.perfil === 'administrador',
+        pode_financeiro: u.podeFinanceiro ?? (u.perfil === 'administrador' || u.perfil === 'financeiro'),
+        pode_configuracoes: u.podeConfiguracoes ?? u.perfil === 'administrador',
+        pode_backup: u.podeBackup ?? u.perfil === 'administrador',
+        pode_relatorios: u.podeRelatorios ?? (u.perfil === 'administrador' || u.perfil === 'financeiro'),
+        pode_fornecedores: u.podeFornecedores ?? u.perfil === 'administrador',
+        pode_vendedores: u.podeVendedores ?? u.perfil === 'administrador',
+        pode_historico_vendas: u.podeHistoricoVendas ?? (u.perfil === 'administrador' || u.perfil === 'financeiro'),
+        pode_pix: u.podePix ?? (u.perfil === 'administrador' || u.perfil === 'financeiro'),
+        updated_at: new Date().toISOString(),
+      }));
+      delete row.id;
+      return row;
+    });
+    const { error: usersError } = await db.from(tables.usuarios).upsert(userRows, { onConflict: 'project_id,login' });
     if (usersError) throw usersError;
   }
   return config;

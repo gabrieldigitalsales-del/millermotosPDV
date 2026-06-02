@@ -48,10 +48,17 @@ create table public.mm_pdv_usuarios (
   perfil text not null check (perfil in ('administrador','financeiro','vendedor')),
   ativo boolean not null default true,
   pode_vender boolean not null default true,
+  pode_clientes boolean not null default true,
   pode_estoque boolean not null default false,
+  pode_produtos boolean not null default false,
   pode_financeiro boolean not null default false,
   pode_configuracoes boolean not null default false,
+  pode_backup boolean not null default false,
   pode_relatorios boolean not null default false,
+  pode_fornecedores boolean not null default false,
+  pode_vendedores boolean not null default false,
+  pode_historico_vendas boolean not null default false,
+  pode_pix boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (project_id, login)
@@ -257,10 +264,10 @@ order by coalesce(sum(i.quantidade), 0) desc, p.estoque desc, p.nome asc;
 insert into public.mm_pdv_configuracoes (project_id, nome_empresa, nome_fantasia, cnpj, email, telefone, endereco, cidade, chave_pix, nome_titular_pix, mensagem_cupom, permitir_vendedor_estoque)
 values ('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','MILLER MOTOS','MILLER MOTOS','','','','SETE LAGOAS - MG','SETE LAGOAS - MG','','MILLER MOTOS','Obrigado pela preferencia!',false);
 
-insert into public.mm_pdv_usuarios (project_id, nome, login, senha, perfil, ativo, pode_vender, pode_estoque, pode_financeiro, pode_configuracoes, pode_relatorios) values
-('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Administrador','admin','admin123','administrador',true,true,true,true,true,true),
-('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Financeiro','financeiro','fin123','financeiro',true,false,false,true,false,true),
-('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Vendedor','vendedor','venda123','vendedor',true,true,false,false,false,false);
+insert into public.mm_pdv_usuarios (project_id, nome, login, senha, perfil, ativo, pode_vender, pode_clientes, pode_estoque, pode_produtos, pode_financeiro, pode_configuracoes, pode_backup, pode_relatorios, pode_fornecedores, pode_vendedores, pode_historico_vendas, pode_pix) values
+('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Administrador','admin','admin123','administrador',true,true,true,true,true,true,true,true,true,true,true,true,true),
+('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Financeiro','financeiro','fin123','financeiro',true,false,true,false,false,true,false,false,true,false,false,true,true),
+('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Vendedor','vendedor','venda123','vendedor',true,true,true,false,false,false,false,false,false,false,false,false,false);
 
 insert into public.mm_pdv_vendedores (project_id, nome, ativo) values
 ('9f1f4df2-5f5a-4a7d-9f34-8a9be4412026','Administrador',true),
