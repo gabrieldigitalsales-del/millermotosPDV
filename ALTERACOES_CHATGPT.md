@@ -1,3 +1,16 @@
+# V10 - Reset total sem foreign keys antigas
+
+Esta versão inclui o arquivo `supabase/RESET_TOTAL_V10_SEM_FOREIGN_KEYS.sql`.
+
+Use este arquivo no Supabase para apagar e recriar as tabelas `mm_pdv_*` sem as foreign keys antigas que estavam causando erros como:
+
+- `mm_pdv_itens_venda_produto_id_fkey`
+- `mm_pdv_movimento_estoque_produto_id_fkey`
+- `null value in column id`
+- `ON CONFLICT specification`
+
+Atenção: este reset apaga dados antigos das tabelas `mm_pdv_*`. Faça backup se precisar manter produtos/vendas.
+
 # Alterações aplicadas
 
 ## O que foi corrigido/adicionado
@@ -104,3 +117,9 @@ Exemplo de telefone válido: `+5531999999999`.
 
 Incluído reset completo do banco em `supabase/sql_reset_completo_miller_motos_final.sql`.
 Esse SQL apaga e recria as tabelas `mm_pdv_*` com todos os defaults de UUID, permissões, constraints únicas usadas pelo app e sem trigger de baixa automática de estoque para evitar deadlock/baixa duplicada.
+
+## V9 - Correção FK produto em itens de venda
+
+- Itens de venda não enviam mais `produto_id` rígido para o Supabase.
+- O histórico/cupom continua salvando código, descrição, quantidade, preço e total do produto.
+- Adicionado SQL `supabase/correcao_v9_remove_fk_produto_itens.sql` para remover FK rígida antiga que causava erro quando produtos eram recriados com UUID diferente.

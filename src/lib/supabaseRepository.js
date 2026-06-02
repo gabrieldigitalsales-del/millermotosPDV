@@ -355,7 +355,12 @@ function itemToDb(sale, item) {
   return stripBadId(withProject({
     id: item.itemId || undefined,
     venda_id: sale.__dbId || sale.id,
-    produto_id: isUuid(item.id || item.produtoId) ? (item.id || item.produtoId) : null,
+    // V9: nao gravar produto_id nos itens de venda.
+    // O banco do cliente pode ter produtos recriados com novos UUIDs enquanto
+    // a venda ainda guarda o id antigo em cache. Isso aciona a FK
+    // mm_pdv_itens_venda_produto_id_fkey. Mantemos codigo/descricao/preco/qtd
+    // no item, que e o que o historico/cupom precisa, e evitamos erro de FK.
+    produto_id: null,
     codigo: item.codigo || '',
     descricao: item.nome || item.descricao || '',
     quantidade: toNumber(item.qtd),
