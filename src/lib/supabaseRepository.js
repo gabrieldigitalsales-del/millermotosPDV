@@ -48,6 +48,14 @@ const pick = (row, keys, fallback = '') => {
 };
 const cleanId = (value, fallbackPrefix = 'ID') => String(value || `${fallbackPrefix}${Date.now()}`);
 const looksUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+const makeUuid = () => {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
 const stripUuidPrefix = (value, fallback = '') => {
   const text = String(value ?? '').trim();
   if (!text) return fallback;
@@ -215,12 +223,15 @@ function isUuid(value) {
   return looksUuid(value);
 }
 
-function stripBadId(row) {
+function stripBadId(row, options = {}) {
   const copy = { ...row };
   // Nunca envie id vazio/nulo/temporario para o Supabase.
-  // Assim o banco usa o default gen_random_uuid().
+  // Quando generateId=true, o app gera UUID no navegador. Isso evita o erro:
+  // null value in column "id" violates not-null constraint
+  // mesmo quando a tabela antiga do Supabase ainda não tem DEFAULT gen_random_uuid().
   if (copy.id === null || copy.id === undefined || String(copy.id).trim() === '' || !isUuid(copy.id)) {
-    delete copy.id;
+    if (options.generateId) copy.id = makeUuid();
+    else delete copy.id;
   }
   return copy;
 }
@@ -245,7 +256,7 @@ function produtoToDb(p) {
     unidade: p.unidade || 'UN',
     ativo: p.ativo !== false,
     updated_at: new Date().toISOString(),
-  }));
+  }), { generateId: true });
 }
 
 function movimentoFromDb(row) {
@@ -275,7 +286,7 @@ function movimentoToDb(m) {
     estoque_antes: toNumber(m.estoqueAntes),
     estoque_depois: toNumber(m.estoqueDepois),
     usuario_nome: m.usuario || '',
-  }));
+  }), { generateId: true });
 }
 
 function parseSaleMeta(row) {
@@ -337,7 +348,7 @@ function vendaToDb(sale) {
     status: sale.status || (sale.cancelada ? 'CANCELADA' : 'FINALIZADA'),
     observacoes: JSON.stringify({ pagamentos: sale.pagamentos || [], canceladaEm: sale.canceladaEm || '', canceladaPor: sale.canceladaPor || '' }),
     updated_at: new Date().toISOString(),
-  }));
+  }), { generateId: true });
 }
 
 function itemToDb(sale, item) {
@@ -351,7 +362,7 @@ function itemToDb(sale, item) {
     valor_unitario: toNumber(item.preco),
     custo_unitario: toNumber(item.custo),
     total: toNumber(item.total || toNumber(item.preco) * toNumber(item.qtd)),
-  }));
+  }), { generateId: true });
 }
 
 async function selectAll(table, order = 'created_at', ascending = false) {
@@ -403,6 +414,7 @@ async function replaceConfig(config) {
     // O upsert por project_id + login atualiza o usuário existente ou cria um novo UUID automaticamente.
     const userRows = users.map((u) => {
       const row = stripBadId(withProject({
+        id: u.id,
         nome: u.nome,
         login: u.login,
         senha: u.senha,
@@ -421,8 +433,7 @@ async function replaceConfig(config) {
         pode_historico_vendas: u.podeHistoricoVendas ?? (u.perfil === 'administrador' || u.perfil === 'financeiro'),
         pode_pix: u.podePix ?? (u.perfil === 'administrador' || u.perfil === 'financeiro'),
         updated_at: new Date().toISOString(),
-      }));
-      delete row.id;
+      }), { generateId: true });
       return row;
     });
     const { error: usersError } = await db.from(tables.usuarios).upsert(userRows, { onConflict: 'project_id,login' });
@@ -469,15 +480,44 @@ export async function saveResource(resource, value) {
     if (resource === 'products') return replaceProdutos(value);
     if (resource === 'movements') return replaceMovimentos(value);
     if (resource === 'sales') return replaceSales(value);
-    if (resource === 'clients') return replaceRows(tables.clientes, value.map((c) => stripBadId(withProject({
-      id: c.id, nome: c.nome || 'Cliente', cpf_cnpj: c.documento || '', telefone: c.telefone || '', email: c.email || '', endereco: c.endereco || '', cidade: c.cidade || '', observacoes: c.obs || '', ativo: true
-    }))));
-    if (resource === 'suppliers') return replaceRows(tables.fornecedores, value.map((s) => stripBadId(withProject({
-      id: s.id, nome: s.nome || 'Fornecedor', cnpj: s.cnpj || '', telefone: s.telefone || '', email: s.email || '', cidade: s.cidade || '', observacoes: s.obs || '', ativo: true
-    }))));
-    if (resource === 'vendors') return replaceRows(tables.vendedores, value.map((v) => stripBadId(withProject({
-      id: v.id, nome: v.nome || 'Vendedor', telefone: v.telefone || '', email: v.email || '', comissao: toNumber(v.comissao), ativo: v.ativo !== false
-    }))));
+    if (resource === 'clients') {
+      const rows = value.map((c) => stripBadId(withProject({
+        id: c.id,
+        nome: c.nome || 'Cliente',
+        cpf_cnpj: c.documento || '',
+        telefone: c.telefone || '',
+        email: c.email || '',
+        endereco: c.endereco || '',
+        cidade: c.cidade || '',
+        observacoes: c.obs || '',
+        ativo: true,
+      }), { generateId: true }));
+      return replaceRows(tables.clientes, rows);
+    }
+    if (resource === 'suppliers') {
+      const rows = value.map((s) => stripBadId(withProject({
+        id: s.id,
+        nome: s.nome || 'Fornecedor',
+        cnpj: s.cnpj || '',
+        telefone: s.telefone || '',
+        email: s.email || '',
+        cidade: s.cidade || '',
+        observacoes: s.obs || '',
+        ativo: true,
+      }), { generateId: true }));
+      return replaceRows(tables.fornecedores, rows);
+    }
+    if (resource === 'vendors') {
+      const rows = value.map((v) => stripBadId(withProject({
+        id: v.id,
+        nome: v.nome || 'Vendedor',
+        telefone: v.telefone || '',
+        email: v.email || '',
+        comissao: toNumber(v.comissao),
+        ativo: v.ativo !== false,
+      }), { generateId: true }));
+      return replaceRows(tables.vendedores, rows);
+    }
     return null;
   });
 }
